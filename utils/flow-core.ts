@@ -90,7 +90,7 @@ export function createFlowResults(): {
     const entry = { step, status, data, error };
     if (idx >= 0) results.steps[idx] = entry;
     else results.steps.push(entry);
-    if (status !== 'running') lastStep = step;
+    lastStep = step;
     if (status === 'error' || error) {
       console.error(`[flow] ✗ step="${step}" error="${error ?? '(none)'}"`, data ?? null);
     } else if (status === 'running') {

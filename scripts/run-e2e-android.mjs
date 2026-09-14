@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 
 const DEMO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /** The emulator's alias for the host loopback (see `utils/bitcoin-node.ts`). */
-const EMULATOR_HOST = '10.0.2.2';
+let EMULATOR_HOST = '10.0.2.2';
 
 // ── args ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,7 @@ const argOf = (name, fallback) => {
 const flag = (name) => argv.includes(`--${name}`);
 
 const options = {
+  platform: argOf('platform', 'android'),
   fixtures: argOf('fixtures', process.env.RGB_E2E_FIXTURES ?? resolve(DEMO_DIR, 'e2e-fixtures.json')),
   only: argOf('only', ''),
   device: argOf('device', process.env.ANDROID_SERIAL ?? ''),
@@ -56,6 +57,10 @@ const options = {
   noLaunch: flag('no-launch'),
 };
 
+if (!['android', 'ios'].includes(options.platform)) throw new Error('--platform must be android or ios');
+if (options.platform === 'ios') EMULATOR_HOST = '127.0.0.1';
+const simctl = (args) => spawnSync('xcrun', ['simctl', ...args], { encoding: 'utf8' });
+
 const log = (...a) => console.log('[rn-e2e]', ...a);
 const die = (msg, code = 2) => {
   console.error(`[rn-e2e] ERROR: ${msg}`);
@@ -68,6 +73,15 @@ const adbArgs = options.device ? ['-s', options.device] : [];
 const adb = (args) => spawnSync('adb', [...adbArgs, ...args], { encoding: 'utf8' });
 
 function requireDevice() {
+  if (options.platform === 'ios') {
+    const probe = simctl(['list', 'devices', 'booted', '--json']);
+    if (probe.status !== 0) die(probe.stderr || 'Cannot query iOS simulators');
+    const devices = Object.values(JSON.parse(probe.stdout).devices).flat().filter((d) => d.state === 'Booted');
+    const selected = options.device ? devices.find((d) => d.udid === options.device) : devices.length === 1 ? devices[0] : null;
+    if (!selected) die('Boot an iOS simulator and pass --device <UDID> if more than one is booted.');
+    options.device = selected.udid;
+    return selected.udid;
+  }
   const probe = adb(['devices']);
   if (probe.error) die('`adb` not found on PATH — install platform-tools or add it to PATH.');
   const devices = probe.stdout
@@ -108,8 +122,8 @@ function loadFixtures() {
 function loadAppIdentity() {
   const appJson = JSON.parse(readFileSync(resolve(DEMO_DIR, 'app.json'), 'utf8'));
   const scheme = appJson.expo?.scheme;
-  const pkg = appJson.expo?.android?.package;
-  if (!scheme || !pkg) die('app.json is missing expo.scheme or expo.android.package');
+  const pkg = options.platform === 'ios' ? appJson.expo?.ios?.bundleIdentifier : appJson.expo?.android?.package;
+  if (!scheme || !pkg) die('app.json is missing expo.scheme or the platform app identifier');
   return { scheme, pkg };
 }
 
@@ -166,12 +180,12 @@ function launch({ scheme, pkg }, fx, runId) {
     .join('&');
   const url = `${scheme}://e2e?${query}`;
   // Single-quoted for the *device* shell: the query string carries `&` and `?`.
-  const res = adb(['shell', `am start -a android.intent.action.VIEW -d '${url}' ${pkg}`]);
+  const res = options.platform === 'ios' ? simctl(['openurl', options.device, url]) : adb(['shell', `am start -a android.intent.action.VIEW -d '${url}' ${pkg}`]);
   if (res.status !== 0 || /Error|Exception/i.test(res.stderr ?? '')) {
     die(
       'deep link failed — is the app installed on the device?\n' +
         `  ${(res.stderr || res.stdout || '').trim()}\n` +
-        '  Install it with: yarn android'
+        `  Install it with: npm run ${options.platform}`
     );
   }
   return url;
@@ -181,6 +195,14 @@ async function main() {
   const serial = requireDevice();
   const fx = loadFixtures();
   const app = loadAppIdentity();
+  if (options.only.split(',').includes('H') && !fx.VSS_URL) die('Scenario H requires VSS_URL in fixtures; start the stack with VSS=1.');
+  if (options.platform === 'ios' && !options.noLaunch) {
+    const installed = simctl(['get_app_container', options.device, app.pkg, 'app']);
+    if (installed.status !== 0) die('Install the demo with npm run ios first.');
+    simctl(['terminate', options.device, app.pkg]);
+    const started = simctl(['launch', options.device, app.pkg]);
+    if (started.status !== 0) die(started.stderr || 'Cannot launch iOS demo');
+  }
   log(`device ${serial} · fixtures ${options.fixtures} (generated ${fx.generatedAt})`);
 
   const runId = Date.now().toString(36);

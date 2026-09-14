@@ -6,6 +6,7 @@ import {
   createWallet,
   PasswordRLNSigner,
   UTEXOWallet,
+  type LspGetInfoResponse,
 } from '@utexo/rgb-sdk-rn';
 
 import {
@@ -22,7 +23,7 @@ import {
 export function useLspFlow() {
   const [phase, setPhase]                   = useState<Phase>('idle');
   const [log,   setLog]                     = useState<LogEntry[]>([]);
-  const [lspInfo,        setLspInfo]        = useState<any>(null);
+  const [lspInfo,        setLspInfo]        = useState<LspGetInfoResponse | null>(null);
   const [addrA,          setAddrA]          = useState('');
   const [addrB,          setAddrB]          = useState('');
   const [balA,           setBalA]           = useState<any>(null);
@@ -142,7 +143,7 @@ export function useLspFlow() {
       req('lsp.getInfo');
       const info = await lspA.http.getInfo();
       setLspInfo(info);
-      res('lsp.getInfo', { pubkey: short(info.pubkey), channels: info.numChannels, usable: info.numUsableChannels });
+      res('lsp.getInfo', { pubkey: short(info.pubkey), network: info.network });
 
       req('nodeA.getAddress');
       const adA = await wA.getAddress(); setAddrA(adA);

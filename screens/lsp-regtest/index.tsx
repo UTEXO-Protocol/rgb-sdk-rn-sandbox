@@ -198,7 +198,7 @@ function LspScreen({ embedded = false, virtual = false }: LspScreenProps) {
           <InfoCard title="LSP (utexo-lsp)" accent={AppColors.success} rows={[
             ['API',      LSP_URL],
             ['Pubkey',   short(flow.lspInfo.pubkey, 28)],
-            ['Channels', `${flow.lspInfo.numChannels} total · ${flow.lspInfo.numUsableChannels} usable`],
+            ['Network',  flow.lspInfo.network],
           ]} />
         )}
         {flow.addrA && (

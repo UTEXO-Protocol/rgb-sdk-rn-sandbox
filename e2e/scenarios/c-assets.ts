@@ -17,6 +17,7 @@ import { assert, assertEq, type ScenarioContext } from '../harness';
 const TRANSFER_STATUSES = [
   'WaitingCounterparty',
   'WaitingSafeHeight',
+  'WaitingBroadcast',
   'WaitingConfirmations',
   'Settled',
   'Failed',

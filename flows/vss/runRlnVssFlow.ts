@@ -25,9 +25,16 @@ export async function runRlnVssFlow() {
 
   try {
     const { network, unlockParams } = buildRegtestConfig();
-    const vssUrl = readEnv('RLN_VSS_URL') ?? null;
+    const vssUrl = readEnv('RLN_VSS_URL')?.trim() ?? null;
 
     if (!vssUrl) throw new Error('EXPO_PUBLIC_RLN_VSS_URL not set — add it to .env');
+
+    // Match the UTEXO flow; only funding, mining and confirmation timing differ.
+    const targetUtxoCount = 3;
+    const targetUtxoSizeSat = 32500;
+    const fundingAmountSat = 1227500;
+    const channelCapacitySat = 100000;
+    console.log('[vss] configuration', JSON.stringify({ network, vssUrl, unlockParams }));
 
     const keysA = await createWallet(network);
     const keysB = await createWallet(network);
@@ -53,7 +60,7 @@ export async function runRlnVssFlow() {
         enableVirtualChannelsV0: false,
         vssUrl,
         vssAllowHttp: vssUrl.startsWith('http://'),
-        vssAllowEmptyRestore: false,
+        vssAllowEmptyRestore: true,
       },
       new PasswordRLNSigner(password, keysA.mnemonic),
     );
@@ -68,8 +75,9 @@ export async function runRlnVssFlow() {
       new PasswordRLNSigner(password, keysB.mnemonic),
     );
     await wallet.init();
-    console.log(unlockParams);
+    console.log('[vss] walletA init ✓');
     await wallet.unlock(unlockParams);
+    console.log('[vss] walletA unlock ✓');
     await nodeB.init();
     await nodeB.unlock(unlockParams);
     const nodeBInfo = await nodeB.getNodeInfo();
@@ -79,20 +87,37 @@ export async function runRlnVssFlow() {
     // 2 — fund nodeA
     addStep('vssFundWallet', 'running');
     const address = await wallet.getAddress();
-    const txid = await sendToAddress(address, 1);
+    const txid = await sendToAddress(address, fundingAmountSat / 100000000);
     await mine(6);
     await sleep(3000);
     await wallet.syncWallet();
-    const btcBalance = await wallet.getBtcBalance();
+    let btcBalance = await wallet.getBtcBalance();
+    const fundingDeadline = Date.now() + 120000;
+    while (btcBalance.vanilla.settled < fundingAmountSat && Date.now() < fundingDeadline) {
+      await sleep(2000);
+      await wallet.syncWallet();
+      btcBalance = await wallet.getBtcBalance();
+    }
+    if (btcBalance.vanilla.settled < fundingAmountSat) throw new Error('Timed out waiting for confirmed funding');
     addStep('vssFundWallet', 'success', { txid, spendable: btcBalance?.vanilla?.spendable });
 
     // 3 — create UTXOs for RGB operations
     addStep('vssCreateUtxos', 'running');
-    await wallet.createUtxos({ upTo: false, num: 5, feeRate: 3 });
+    const coloredBefore = (await wallet.getBtcBalance()).colored.settled;
+    await wallet.createUtxos({ upTo: false, num: targetUtxoCount, size: targetUtxoSizeSat, feeRate: 3 });
     await mine(1);
-    await sleep(2000);
-    await wallet.syncWallet();
-    addStep('vssCreateUtxos', 'success', { num: 5 });
+    let confirmed = false;
+    const utxoDeadline = Date.now() + 120000;
+    while (Date.now() < utxoDeadline) {
+      await sleep(2000);
+      await wallet.syncWallet();
+      if ((await wallet.getBtcBalance()).colored.settled >= coloredBefore + targetUtxoCount * targetUtxoSizeSat) {
+        confirmed = true;
+        break;
+      }
+    }
+    if (!confirmed) throw new Error('Timed out waiting for confirmed RGB UTXOs');
+    addStep('vssCreateUtxos', 'success', { num: targetUtxoCount, size: targetUtxoSizeSat });
 
     // 4 — issue NIA asset
     addStep('vssIssueAssetNia', 'running');
@@ -111,35 +136,48 @@ export async function runRlnVssFlow() {
     await sleep(1000);
     const openResp = await wallet.openChannel({
       peerPubkey: peerUriB,
-      capacitySat: 200000,
+      capacitySat: channelCapacitySat,
       pushMsat: 0,
       isPublic: true,
       withAnchors: true,
     });
-    const tempChannelId = String(openResp?.temporaryChannelId ?? '');
+    console.log('[vss] openChannel', openResp);
     await mine(6);
     await sleep(3000);
     for (const [node, label] of [[wallet, 'nodeA'], [nodeB, 'nodeB']] as [UTEXOWallet, string][]) {
       const deadline = Date.now() + 120000;
+      let channelUsable = false;
       while (Date.now() < deadline) {
         await node.syncWallet();
         const info = await node.getNodeInfo();
         const usable = Number(info?.numUsableChannels ?? 0);
         console.log(`[vss] ${label} usableChannels=${usable}`);
-        if (usable >= 1) break;
+        if (usable >= 1) {
+          channelUsable = true;
+          break;
+        }
         await sleep(2000);
       }
+      if (!channelUsable) throw new Error(`Timed out waiting for ${label} usable channel`);
     }
     const channelsA = await wallet.listChannels() ?? [];
-    const channel = (channelsA as any[]).find((c: any) => c.isUsable);
-    const channelId = String(channel?.channelId ?? tempChannelId);
-    const channelCapacity = Number(channel?.capacitySat ?? 200000);
+    const channel = (channelsA as any[]).find((c: any) => c.ready);
+    if (!channel?.channelId) throw new Error('Timed out waiting for a ready channel');
+    const channelId = String(channel.channelId);
+    const channelCapacity = Number(channel?.capacitySat ?? channelCapacitySat);
     addStep('vssOpenChannel', 'success', { channelId: channelId.substring(0, 16) + '...', capacitySat: channelCapacity });
 
     const nodeInfoA = await wallet.getNodeInfo();
     const pubkeyA = String(nodeInfoA?.pubkey ?? '');
 
     // 6 — shutdown nodeA (keep nodeB running), delete nodeA local state
+    addStep('vssBackupNow', 'running');
+    const backupVersion = await wallet.backupNow();
+    if (!Number.isSafeInteger(backupVersion) || backupVersion < 0) {
+      throw new Error(`Invalid VSS backup version: ${backupVersion}`);
+    }
+    addStep('vssBackupNow', 'success', { backupVersion });
+
     addStep('vssDeleteState', 'running');
     await wallet.shutdown();
     wallet = null;
@@ -189,9 +227,15 @@ export async function runRlnVssFlow() {
     } catch (e: any) { console.warn('[vss] getBtcBalance FAILED:', e?.message); }
 
     const restoredChannels = (await walletRestored!.listChannels() ?? []) as any[];
-    const restoredChannel = restoredChannels.find((c: any) => c.channelId === channelId)
-      ?? restoredChannels[0];
-    console.log(`[vss] restored channels=${restoredChannels.length}`, JSON.stringify(restoredChannels.map((c: any) => ({ id: c.channelId?.substring(0, 16), isUsable: c.isUsable }))));
+    const restoredChannel = restoredChannels.find((c: any) => c.channelId === channelId);
+    console.log(`[vss] restored channels=${restoredChannels.length}`, JSON.stringify(restoredChannels.map((c: any) => ({ id: c.channelId?.substring(0, 16), isUsable: c.ready }))));
+
+    if (!pubkeyA || restoredPubkey !== pubkeyA) {
+      throw new Error('Restored node pubkey does not match the original');
+    }
+    if (!restoredChannel || restoredChannel.capacitySat !== channelCapacity) {
+      throw new Error(`Restored channel ${channelId} is missing or has a different capacity`);
+    }
 
     addStep('vssVerifyRestoredWallet', 'success', {
       pubkeyMatch: restoredPubkey === pubkeyA,
@@ -199,7 +243,7 @@ export async function runRlnVssFlow() {
       restoredBtcSpendable: restoredBtcBalance?.vanilla?.spendable ?? null,
       channelsRestored: restoredChannels.length,
       channelFound: !!restoredChannel,
-      channelIsUsable: restoredChannel?.isUsable ?? false,
+      channelIsUsable: restoredChannel?.ready ?? false,
     });
 
     // 9 — verify RGB asset balance after restore
@@ -219,10 +263,19 @@ export async function runRlnVssFlow() {
       assetBalanceError = `${e?.message ?? e} (${e?.code ?? 'unknown'})`;
       console.warn('[vss] asset balance after restore FAILED:', assetBalanceError);
     }
-    addStep('vssVerifyAssetBalance', assetBalanceError && !restoredAssetBalance ? 'error' : 'success', {
+    if (assetBalanceError) throw new Error(assetBalanceError);
+    if (!restoredAssets?.nia?.some((asset: { assetId: string }) => asset.assetId === assetId)) {
+      throw new Error(`Restored wallet is missing asset ${assetId}`);
+    }
+    if (preWipeBalance?.settled == null || restoredAssetBalance?.settled !== preWipeBalance.settled) {
+      throw new Error('Restored RGB settled balance does not match the backup');
+    }
+    addStep('vssVerifyAssetBalance', 'success', {
       assetId: assetId.substring(0, 20) + '...',
+      preWipeSettled: preWipeBalance?.settled ?? null,
       preWipeSpendable: preWipeBalance?.spendable ?? null,
       restoredNiaCount: restoredAssets?.nia?.length ?? null,
+      restoredSettled: restoredAssetBalance?.settled ?? null,
       restoredSpendable: restoredAssetBalance?.spendable ?? null,
       error: assetBalanceError,
     });
