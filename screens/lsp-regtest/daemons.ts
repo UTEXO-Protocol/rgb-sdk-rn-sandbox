@@ -31,7 +31,7 @@ export const faucet = {
   assetBalance:     (assetId: string) => daemonPost(FAUCET_DAEMON_URL, '/assetbalance',     { asset_id: assetId }),
   decodeRgbInvoice: (invoice: string) => daemonPost(FAUCET_DAEMON_URL, '/decodergbinvoice', { invoice }),
   sendRgb:          (body: object)    => daemonPost(FAUCET_DAEMON_URL, '/sendrgb',           body),
-  listTransfers:    (assetId: string) => daemonPost(FAUCET_DAEMON_URL, '/listtransfers',     { asset_id: assetId }),
+  listTransfers:    (assetId: string) => daemonPost(FAUCET_DAEMON_URL, '/listtransfers',     { asset_filter: { type: 'Id', value: assetId } }),
   refresh:          ()                => refreshTransfers(FAUCET_DAEMON_URL),
   refreshOnce:      ()                => daemonPost(FAUCET_DAEMON_URL, '/refreshtransfers',  { filter: [], skip_sync: false }),
 };
@@ -39,7 +39,7 @@ export const faucet = {
 // ── Demo helpers: LSP daemon (external RLN node, NOT the SDK) ────────────────
 export const lspDaemon = {
   nodeInfo:      ()                => daemonGet(LSP_DAEMON_URL,  '/nodeinfo'),
-  listTransfers: (assetId: string) => daemonPost(LSP_DAEMON_URL, '/listtransfers', { asset_id: assetId }),
+  listTransfers: (assetId: string) => daemonPost(LSP_DAEMON_URL, '/listtransfers', { asset_filter: { type: 'Id', value: assetId } }),
   refresh:       ()                => refreshTransfers(LSP_DAEMON_URL),
   refreshOnce:   ()                => daemonPost(LSP_DAEMON_URL, '/refreshtransfers', { filter: [], skip_sync: false }),
 };

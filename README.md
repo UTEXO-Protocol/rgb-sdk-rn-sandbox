@@ -148,7 +148,16 @@ npm run ios:release
 npm run android:release
 ```
 
-> **Why Release?** The RGB Lightning Node runs as a native daemon. In Debug mode Metro serves JS over the network and the native thread can't bind its listening ports reliably. Always use Release builds when running the flows.
+> **Why Release?** Not because of Metro — the native code has no `#if DEBUG`
+> branch, so port binding is identical in both configurations. The real
+> constraint is that a **JS reload orphans the native nodes**: `RlnNodeStore` is
+> a process-wide singleton with no bridge-invalidate hook, so Fast Refresh or `r`
+> leaves the Rust nodes running with their ports bound and no JS handle left to
+> reach them. Release is simply the configuration you never reload.
+>
+> Debug works fine if every reload is a process relaunch — build once with
+> `npm run ios`, turn Fast Refresh off, then `npm run ios:relaunch`
+> (`npm run android:relaunch` on the emulator) after each JS change.
 
 ### Clean build
 

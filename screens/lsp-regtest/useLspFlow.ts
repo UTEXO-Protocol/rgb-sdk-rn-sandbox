@@ -7,6 +7,7 @@ import {
   createWallet,
   PasswordRLNSigner,
   UTEXOWallet,
+  type LspGetInfoResponse,
   type LspPeer,
 } from '@utexo/rgb-sdk-rn';
 
@@ -33,7 +34,7 @@ function walletChannelOpts(channelMode: LspChannelMode, lspPeerPubkey: string) {
 export function useLspFlow({ channelMode = 'regular' }: UseLspFlowOptions = {}) {
   const [phase, setPhase]               = useState<Phase>('idle');
   const [log,   setLog]                 = useState<LogEntry[]>([]);
-  const [lspInfo,       setLspInfo]     = useState<any>(null);
+  const [lspInfo,       setLspInfo]     = useState<LspGetInfoResponse | null>(null);
   const [addrA,         setAddrA]       = useState('');
   const [balA,          setBalA]        = useState<any>(null);
   const [channelInfo,   setChannelInfo] = useState<any>(null);
@@ -137,7 +138,7 @@ export function useLspFlow({ channelMode = 'regular' }: UseLspFlowOptions = {}) 
       req('lsp.getInfo');
       const info = await lspA.http.getInfo();
       setLspInfo(info);
-      res('lsp.getInfo', { pubkey: short(info.pubkey), channels: info.numChannels, usable: info.numUsableChannels });
+      res('lsp.getInfo', { pubkey: short(info.pubkey), network: info.network });
 
       addLog('calling wA.init()…');
       try {

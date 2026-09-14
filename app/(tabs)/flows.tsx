@@ -1072,9 +1072,9 @@ export default function FlowsScreen() {
               title="VSS Backup & Restore"
               funcName="runRlnVssFlow"
               tags={['VSS', 'Regtest']}
-              description="Init UTEXOWallet with VSS on regtest. Fund 1 BTC, create UTXOs, issue 500 VDMO. Open BTC channel. Shut down and wipe local state. Restore from VSS — verifies pubkey match, channel presence, and asset balance after restore."
+              description="Init UTEXOWallet with VSS on regtest. Fund 1,227,500 sats, create 3 × 32,500-sat UTXOs, issue 500 VDMO. Open BTC channel. Shut down and wipe local state. Restore from VSS — verifies pubkey match, channel presence, and asset balance after restore."
               accentColor="#6B3D1D"
-              totalSteps={12}
+              totalSteps={11}
               results={rlnVssFlowResults}
               running={runningRlnVssFlow}
               onRun={handleRlnVssFlow}>
@@ -1095,6 +1095,8 @@ export default function FlowsScreen() {
               })}
             </FlowCard>
 
+
+
             <VirtualChannelScreen embedded />
 
             <VirtualChannelBtcScreen embedded />
@@ -1104,12 +1106,14 @@ export default function FlowsScreen() {
         {activeTab === 'utexo' && (
           <>
           <FlowCard
-            title="VSS Backup & Restore"
+            title={process.env.EXPO_PUBLIC_UTEXO_VSS_BACKUP_ONLY === '1' ? 'VSS Init & Backup' : 'VSS Backup & Restore'}
             funcName="runRlnUtexoVssFlow"
             tags={['VSS', 'UTEXO Testnet']}
-            description="Init UTEXOWallet with VSS on UTEXO testnet. Faucet-funded. If balance arrives in time: create UTXOs, issue 500 VDMO, open BTC channel. Then wipe local state and restore from VSS — verifies pubkey + channel survive the restore."
+            description={process.env.EXPO_PUBLIC_UTEXO_VSS_BACKUP_ONLY === '1'
+              ? 'Temporary diagnostic: init and unlock a fresh UTEXO wallet, then immediately call backupNow using the configured UTEXO VSS endpoint.'
+              : 'Fund a UTEXO wallet, issue 500 VDMO and open a BTC channel. Back up, wipe and restore; verify pubkey, channel and RGB balance.'}
             accentColor="#1D6B8A"
-            totalSteps={13}
+            totalSteps={process.env.EXPO_PUBLIC_UTEXO_VSS_BACKUP_ONLY === '1' ? 2 : 13}
             results={vssFlowResults}
             running={runningVssFlow}
             onRun={handleVssFlow}>
@@ -1471,4 +1475,3 @@ const fStyles = StyleSheet.create({
   },
   rerunBtnText: { fontWeight: '700', fontSize: 13 },
 });
-

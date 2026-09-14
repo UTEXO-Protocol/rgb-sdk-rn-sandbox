@@ -51,7 +51,7 @@ export default function LspSignetScreen({ embedded = false }: { embedded?: boole
           <Text style={s.subtitle}>lsp-signet.utexo.com · lightning_receive + P2P payment</Text>
           <View style={s.badge}>
             <View style={[s.dot, { backgroundColor: flow.lspInfo ? AppColors.success : AppColors.textTertiary }]} />
-            <Text style={s.badgeTxt}>{flow.lspInfo ? `LSP connected · ${flow.lspInfo.numChannels} ch` : 'Not connected'}</Text>
+            <Text style={s.badgeTxt}>{flow.lspInfo ? 'LSP connected' : 'Not connected'}</Text>
           </View>
         </View>
 
@@ -148,7 +148,7 @@ export default function LspSignetScreen({ embedded = false }: { embedded?: boole
         {flow.lspInfo && (
           <InfoCard title="LSP (utexo-lsp signet)" accent={AppColors.success} rows={[
             ['Pubkey',   short(flow.lspInfo.pubkey, 28)],
-            ['Channels', `${flow.lspInfo.numChannels} total · ${flow.lspInfo.numUsableChannels} usable`],
+            ['Network',  flow.lspInfo.network],
           ]} />
         )}
         {(flow.addrA || flow.addrB) && (

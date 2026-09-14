@@ -85,6 +85,7 @@ export async function runE2E(opts: RunOptions): Promise<RunSummary> {
     fx = parseFixtures(opts.fixtures);
     const boot = await bootWallet({
       vssUrl: fx.VSS_URL ? hostUrl(fx.VSS_URL) : null,
+      allowEmptyRestore: true,
     });
     emitLog(
       `wallet booted — storage=${boot.storageDirPath} ports=${boot.daemonPort}/${boot.ldkPeerPort}`

@@ -2,8 +2,8 @@
 # start-lsp-regtest.sh
 #
 # Sets up the full LSP regtest environment matching the utexo-lsp e2e test fixture:
-#   LSP daemon  (port 3001, peer 9735) — docker RLN
-#   Faucet daemon (port 3004, peer 9738) — docker RLN
+#   LSP daemon  (port 3005, peer 9737) — native RLN binary
+#   Faucet daemon (port 3008, peer 9740) — native RLN binary
 #   utexo-lsp   (port 8080) — Go service
 #   local-node-bridge (port 5000) — bitcoin-cli helper for mine/send
 #
@@ -88,7 +88,9 @@ BTC_PORT=18443
 INDEXER_URL="127.0.0.1:50001"
 PROXY_ENDPOINT="rpc://127.0.0.1:3000/json-rpc"
 
-UNLOCK_BODY="{\"password\":\"$PASSWORD\",\"bitcoind_rpc_username\":\"$BTC_USER\",\"bitcoind_rpc_password\":\"$BTC_PASS\",\"bitcoind_rpc_host\":\"$BTC_HOST\",\"bitcoind_rpc_port\":$BTC_PORT,\"indexer_url\":\"$INDEXER_URL\",\"proxy_endpoint\":\"$PROXY_ENDPOINT\",\"announce_addresses\":[]}"
+# LDK sync mode is mandatory in the current REST API. RPC credentials belong
+# inside its config; indexer_url below independently configures the RGB wallet.
+UNLOCK_BODY="{\"password\":\"$PASSWORD\",\"ldk_chain_sync\":{\"mode\":\"BlockSync\",\"config\":{\"bitcoind_rpc_username\":\"$BTC_USER\",\"bitcoind_rpc_password\":\"$BTC_PASS\",\"bitcoind_rpc_host\":\"$BTC_HOST\",\"bitcoind_rpc_port\":$BTC_PORT}},\"indexer_url\":\"$INDEXER_URL\",\"proxy_endpoint\":\"$PROXY_ENDPOINT\",\"announce_addresses\":[]}"
 
 ENV_OUT="$DEMO_DIR/.env.lsp.local"
 
@@ -300,9 +302,12 @@ log "   Active demo nodes stay connected to the LSP. If the cron fires while"
 log "   they are connected it creates stuck Initiated Sends → spendable=0."
 log ""
 
-[ -f "$RLN_BIN" ] || die "RLN binary not found: $RLN_BIN  (run: cargo build --release in rgb-lightning-node)"
+[ -x "$RLN_BIN" ] || die "RLN executable not found: $RLN_BIN (build it once in rgb-lightning-node: cargo build --release --locked --bin rgb-lightning-node)"
 command -v go >/dev/null || die "go not found — install Go"
 command -v jq >/dev/null || die "jq not found — brew install jq"
+
+# RLN is built explicitly when upgrading its version, not on each setup run.
+log "Using existing RLN binary: $RLN_BIN"
 
 # ── regtest services (bitcoind + electrs + proxy, optionally vss) ────────────
 #
@@ -504,7 +509,7 @@ seed_lsp() {
     local expiry rgb_invoice_resp recipient_id send_body
     expiry=$(($(date +%s) + 3600))
     rgb_invoice_resp=$(rln_post "$LSP_PORT" "/rgbinvoice" \
-      "{\"assignment\":{\"type\":\"Any\"},\"expiration_timestamp\":$expiry,\"min_confirmations\":1,\"witness\":false}")
+      "{\"assignment\":{\"type\":\"Any\"},\"expiration_timestamp\":$expiry,\"min_confirmations\":1,\"witness\":false,\"transport_endpoints\":[\"$PROXY_ENDPOINT\"]}")
     recipient_id=$(echo "$rgb_invoice_resp" | jq -r '.recipient_id')
     [ -n "$recipient_id" ] || die "No recipient_id in rgbinvoice response: $rgb_invoice_resp"
 
@@ -557,7 +562,7 @@ send_rgb_bootstrap() {
   local expiry invoice_resp recipient_id send_body
   expiry=$(($(date +%s) + 3600))
   invoice_resp=$(rln_post "$to_port" "/rgbinvoice" \
-    "{\"assignment\":{\"type\":\"Any\"},\"expiration_timestamp\":$expiry,\"min_confirmations\":1,\"witness\":false}")
+    "{\"assignment\":{\"type\":\"Any\"},\"expiration_timestamp\":$expiry,\"min_confirmations\":1,\"witness\":false,\"transport_endpoints\":[\"$PROXY_ENDPOINT\"]}")
   recipient_id=$(echo "$invoice_resp" | jq -r '.recipient_id')
   [ -n "$recipient_id" ] || die "No recipient_id in bootstrap rgbinvoice response: $invoice_resp"
   send_body=$(printf '{
@@ -736,6 +741,7 @@ cd "$UTEXO_LSP_REPO"
 env \
   LSP_BASE_URL="http://127.0.0.1:$LSP_PORT" \
   RGB_NODE_BASE_URL="http://127.0.0.1:$LSP_PORT" \
+  RGB_INVOICE_TRANSPORT_ENDPOINTS="$PROXY_ENDPOINT" \
   LIGHTNING_ADDRESS_DOMAIN_URL="http://127.0.0.1:$UTEXO_PORT" \
   LSP_NODE_HOST="127.0.0.1" \
   LSP_NODE_PORT="$LSP_PEER_PORT" \

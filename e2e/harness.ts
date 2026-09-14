@@ -27,7 +27,8 @@ import { emit } from './marker';
 export interface E2EFixtures {
   platform: 'rn';
   generatedAt: string;
-  ASSET_ID: string;
+  ASSET_ID?: string;
+  IFA_ASSET_ID?: string;
   LSP_PUBKEY: string;
   FAUCET_PUBKEY: string;
   LSP_URL: string;
@@ -64,7 +65,6 @@ export function parseFixtures(raw: unknown): E2EFixtures {
   }
   const fx = raw as Partial<E2EFixtures>;
   const required: (keyof E2EFixtures)[] = [
-    'ASSET_ID',
     'FAUCET_PUBKEY',
     'FAUCET_URL',
     'BRIDGE_URL',
@@ -146,6 +146,8 @@ export interface BootedWallet {
  */
 export async function bootWallet(
   opts: {
+    network?: 'regtest' | 'utexo';
+    unlockParams?: ReturnType<typeof buildRegtestConfig>['unlockParams'];
     password?: string;
     vssUrl?: string | null;
     /** Reuse an identity — same mnemonic means the same VSS store. */
@@ -160,7 +162,9 @@ export async function bootWallet(
   } = {}
 ): Promise<BootedWallet> {
   const password = opts.password ?? 'e2e-password';
-  const { network, unlockParams } = buildRegtestConfig();
+  const defaults = buildRegtestConfig();
+  const network = opts.network ?? defaults.network;
+  const unlockParams = opts.unlockParams ?? defaults.unlockParams;
   const mnemonic = opts.mnemonic ?? (await createWallet(network)).mnemonic;
 
   const ts = Date.now();
@@ -178,19 +182,24 @@ export async function bootWallet(
       enableVirtualChannelsV0: false,
       vssUrl: opts.vssUrl ?? null,
       // The regtest vss-server is plain HTTP.
-      vssAllowHttp: Boolean(opts.vssUrl),
+      vssAllowHttp: opts.vssUrl?.startsWith('http://') ?? false,
       vssAllowEmptyRestore: opts.allowEmptyRestore ?? false,
     },
     new PasswordRLNSigner(password, mnemonic)
   );
 
-  await wallet.init();
-  // A wiped device leaves its single-writer fence behind; clearing it is what
-  // lets the new node claim the store. No-op when there is nothing to clear.
-  if (opts.vssUrl) {
-    await wallet.vssClearFence(password).catch(() => undefined);
+  try {
+    await wallet.init();
+    // A wiped device leaves its single-writer fence behind; clearing it is what
+    // lets the new node claim the store. No-op when there is nothing to clear.
+    if (opts.vssUrl && opts.mnemonic) {
+      await wallet.vssClearFence(password);
+    }
+    await wallet.unlock(unlockParams);
+  } catch (error) {
+    await wallet.destroy().catch(() => undefined);
+    throw error;
   }
-  await wallet.unlock(unlockParams);
 
   return {
     wallet,

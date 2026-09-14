@@ -32,14 +32,23 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ---
 
-## Step 1 — Build the RLN binary
+## Step 1 — Prepare the RLN checkout
+
+Use an RLN checkout compatible with the native framework bundled in the app.
+Build it once when installing or explicitly upgrading RLN:
 
 ```bash
-cd rgb-lightning-node
-cargo build --release
+cd /absolute/path/to/rgb-lightning-node
+cargo build --release --locked --bin rgb-lightning-node --target-dir ./target
 ```
 
-Takes a few minutes on first run.
+The setup script reuses `RGBLN_REPO/target/release/rgb-lightning-node`; it does
+not build or update RLN. Updating the checkout alone does not update that binary.
+Unlock uses explicit `ldk_chain_sync.mode=BlockSync` with Bitcoin RPC credentials
+inside `ldk_chain_sync.config`; `indexer_url` configures the RGB wallet separately.
+Both setup `/rgbinvoice` requests include the required `transport_endpoints`
+array. The Go service receives the same local proxy through
+`RGB_INVOICE_TRANSPORT_ENDPOINTS=rpc://127.0.0.1:3000/json-rpc`.
 
 ---
 
@@ -55,9 +64,15 @@ export UTEXO_LSP_REPO=/absolute/path/to/utexo-lsp
 The setup script refuses to start without both. `RGBLN_REPO` is also how the
 bitcoin bridge locates the docker compose project.
 
+Use compatible versions of RLN, utexo-lsp and the app's native SDK.
+`RGBLN_REPO` must contain the release binary built in Step 1.
+
 ---
 
 ## Step 3 — Run the setup script
+
+Each setup run deletes `data_lsp`, `data_faucet` and the LSP database and issues
+new asset IDs. It creates a fresh test environment; it does not preserve channels.
 
 **This one command is the whole setup.** It starts the regtest docker stack
 (bitcoind, electrs, proxy) if it is not already up, and starts
@@ -225,8 +240,10 @@ npm run ios:release
 npm run android:release
 ```
 
-Always use **Release** builds — the native RLN daemon can't reliably bind ports
-in Debug mode.
+Use **Release** builds, or Debug with `npm run ios:relaunch` /
+`npm run android:relaunch` after every JS change and Fast Refresh turned off — a
+JS reload orphans the native RLN nodes (ports stay bound, no JS handle left).
+See the build note in `CLAUDE.md`.
 
 In the app: **LSP tab → Regtest**. The Bridge Asset flow is first in the list;
 the IFA cart flow is further down.
@@ -256,6 +273,13 @@ Usually the wrong mode. The IFA cart flow needs the default stack; the Bridge
 Asset flow needs `TWO_ASSETS=1`. Check the `SERVING:` line in the script output
 against what the flow expects.
 
+If LSP shows `Opening` with no funding transaction while the app shows zero
+channels, inspect both nodes' `.ldk/logs/logs.txt`. An app-side
+`unknown required feature flag or TLV` immediately after LSP sends `OpenChannel`
+indicates a protocol mismatch. A July daemon sent the old `consignment_endpoint`
+TLV, which the September iOS framework rejected. Rebuild the daemon from a
+compatible checkout and rerun setup after stopping the app flow.
+
 **Bridge Asset flow: `discovery advertises no payout asset`, or a refund arrives unconverted**
 `CONVERTIBLE_ASSET_IDS` / `CONVERTIBLE_PAIRS` / `PAYOUT_ASSET_PREFERENCE` are
 not set — i.e. the stack was started without `TWO_ASSETS=1`.
@@ -264,8 +288,10 @@ not set — i.e. the stack was started without `TWO_ASSETS=1`.
 `MIN_AMT_MSAT` is 3 000 000 on a `TWO_ASSETS=1` stack, because regular channels
 carry a per-HTLC dust floor. Only the default (virtual) stack allows 1 sat.
 
-**`RLN binary not found`**
-Run `cargo build --release` in `rgb-lightning-node`.
+**`RLN executable not found`**
+Build the daemon once using the command in Step 1. Setup never builds it
+automatically. If `--locked` rejects the lockfile, reconcile it with that
+checkout's dependencies first.
 
 **utexo-lsp takes >60 s to start**
 Normal on first run while Go downloads and compiles dependencies.

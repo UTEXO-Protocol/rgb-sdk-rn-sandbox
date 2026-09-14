@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 End-to-end integration demo for `@utexo/rgb-sdk-rn`. An Expo + Expo Router app that runs four live RGB Lightning flows (plus VSS flows) against a local regtest stack — two or three on-device RLN nodes execute real transactions inside the app process.
 
-The SDK is consumed from **npm** — `"@utexo/rgb-sdk-rn": "1.0.0-beta.29"`, which pulls `@utexo/rgb-sdk-core@1.0.0-beta.8`. A clone plus `npm install` is enough; no sibling checkout is required.
+The SDK is consumed from **npm** — `"@utexo/rgb-sdk-rn": "1.0.0-beta.32"`, which pulls `@utexo/rgb-sdk-core@1.0.0-beta.9`. A clone plus `npm install` is enough; no sibling checkout is required.
 
-To work on the SDK itself, point the dependency back at `file:../rgb-sdk-rn` and reinstall — `metro.config.js` still watches both sibling checkouts whenever they exist, so that path keeps working without any other change.
+Metro uses the installed npm packages. Local SDK development requires explicitly switching the dependency to `file:../rgb-sdk-rn` and adding the linked SDK directories to `watchFolders`.
 
 ## Commands
 
@@ -21,11 +21,11 @@ npm run prebuild
 
 # iOS
 cd ios && LANG=en_US.UTF-8 pod install && cd ..
-npm run ios:release          # always Release — see note below
+npm run ios:release          # Release; for Debug see the note below
 npm run ios:open             # open Xcode workspace
 
 # Android
-npm run android:release      # always Release — see note below
+npm run android:release      # Release; for Debug see the note below
 
 # Clean builds
 npm run clean                # removes android/build, ios/build, metro cache
@@ -35,7 +35,30 @@ npm run ios:pod-install      # re-runs pod install
 npm run lint
 ```
 
-> **Always use Release builds.** The RGB Lightning Node runs as a native daemon. In Debug mode, Metro serves JS over the network and the native daemon can't reliably bind its listening ports. Debug builds will appear to start but flows will silently fail or hang.
+> **Release builds are the safe default, but Debug works — under one rule.**
+> The native code has no `#if DEBUG` branch: the daemon binds its ports
+> identically in both configurations. What breaks Debug is **JS reloads**, not
+> Metro. `RlnNodeStore.shared` (`ios/RlnNodeStore.swift` in the SDK) is a
+> process-wide singleton and `Rgb.mm` registers no bridge `invalidate`/`dealloc`
+> hook, so a Fast Refresh or `r` rebuilds the JS context while the Rust nodes
+> keep running — ports bound, LDK peers connected, storage dirs locked — with no
+> JS handle left to reach them and nothing to clean them up. `destroy()` does not
+> clear the native registration either; only a process kill does (see
+> `research/dispose.md`).
+>
+> So in Debug: **one JS-context lifetime = one flow run.** Turn Fast Refresh off
+> and make every reload a process relaunch:
+>
+> ```bash
+> npm run ios          # Debug build, once — no native rebuild after this
+> # edit JS, then:
+> npm run ios:relaunch # terminate + launch: new bundle, clean native state
+> ```
+>
+> (`npm run android:relaunch` is the same for the emulator.) Pressing `r` in
+> Metro or letting Fast Refresh fire is what produces the "appears to start but
+> silently fails or hangs" behaviour — the orphaned nodes accumulate with each
+> reload.
 
 ## Environment Setup
 
@@ -72,9 +95,9 @@ The Bitcoin node helper is a tiny HTTP server (minimal Python/Flask example in `
 
 ### Metro configuration (`metro.config.js`)
 
-Watches `../rgb-sdk-rn` and `../rgb-sdk-core` as additional folders **when those checkouts exist**, so a `file:` install picks up SDK changes without reinstalling; with the npm dependency neither is needed and Metro starts without them. `nodeModulesPaths` puts the demo's `node_modules` first to avoid duplicate React instances.
+Uses the installed npm SDK without watching sibling checkouts. `nodeModulesPaths` points to the demo's `node_modules`.
 
-`@utexo/rgb-sdk-core` arrives as a dependency of the RN SDK and its location depends on the install layout — with `--install-strategy=nested` it lands under `node_modules/@utexo/rgb-sdk-rn/node_modules/`, not hoisted. `coreSdkPath` probes all three layouts; only the `./conformance` subpath is hand-mapped, because package exports are disabled and a subpath has no `main` to fall back on.
+`@utexo/rgb-sdk-core` is resolved with `createRequire` from the installed RN SDK. Both the main entry and `./conformance` are mapped to their installed files so direct demo imports work with the nested npm layout. No sibling core version is forced.
 
 ### Flow runner (`utils/wallet-flow.ts`)
 
