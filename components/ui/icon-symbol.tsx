@@ -21,6 +21,7 @@ const MAPPING = {
   'book.fill': 'menu-book',
   'play.circle.fill': 'play-circle-filled',
   'bitcoinsign.circle.fill': 'currency-bitcoin',
+  'link': 'link',
 } as IconMapping;
 
 /**

@@ -1,5 +1,8 @@
 # rgb-sdk-rn Demo
 
+For the **Wallet** tab and mobile dApp connection flow, see
+[Wallet integration](docs/wallet-integration.md).
+
 End-to-end demo app for [`@utexo/rgb-sdk-rn`](https://github.com/UTEXO-Protocol/rgb-sdk-rn). Runs four live integration flows on the **Flows** tab against a local regtest stack, a **Virtual Channel** flow (regtest and UTEXO signet) demonstrating `trusted_no_broadcast` RGB Lightning channels, a guided **UTEXO 2-Node Flow** on the **Utexo** tab (regtest or UTEXO/signet), **LSP** flows demonstrating inbound RGB liquidity via a Liquidity Service Provider (regtest and UTEXO signet), and **Async Payment (APay)** flows demonstrating Lightning Address checkout with offline-capable receive.
 
 ---

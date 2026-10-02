@@ -45,11 +45,31 @@ export function buildUtexoConfig() {
   return {
     network,
     unlockParams: {
+      ethRpcUrl: Platform.OS === 'ios' ? (process.env.EXPO_PUBLIC_UTEXO_ETH_RPC_URL?.trim() || null) : null,
       indexerUrl,
       proxyEndpoint,
       announceAddresses: [] as string[],
       announceAlias: null as string | null,
       // gossipRgsServerUrl,
+    } as IRLNUnlockParams,
+  };
+}
+
+/** Only the Wallet tab opts into the isolated mock stack; other demo screens keep their config. */
+export function buildDemoWalletConfig() {
+  const mockUrl = process.env.EXPO_PUBLIC_DEMO_MOCK_FAUCET_URL?.trim();
+  if (!mockUrl) return buildUtexoConfig();
+  const url = new URL(mockUrl);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+    throw new Error('Use an HTTP URL for the local regtest mock faucet');
+  return {
+    network: 'regtest' as const,
+    unlockParams: {
+      indexerUrl: `${url.hostname}:51211`,
+      proxyEndpoint: `rpc://${url.hostname}:31210/json-rpc`,
+      ethRpcUrl: Platform.OS === 'ios' ? `${mockUrl.replace(/\/$/, '')}/rpc` : null,
+      announceAddresses: [] as string[],
+      announceAlias: null,
     } as IRLNUnlockParams,
   };
 }

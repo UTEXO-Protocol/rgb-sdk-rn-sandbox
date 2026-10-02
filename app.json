@@ -29,6 +29,14 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Demo Wallet to scan wallet connection QR codes.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store",
       "./plugins/withExcludeX86SimulatorArch",
       "expo-dev-client",
       [
