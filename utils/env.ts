@@ -45,7 +45,7 @@ export function buildUtexoConfig() {
   return {
     network,
     unlockParams: {
-      ethRpcUrl: Platform.OS === 'ios' ? (process.env.EXPO_PUBLIC_UTEXO_ETH_RPC_URL?.trim() || null) : null,
+      ethRpcUrl: process.env.EXPO_PUBLIC_UTEXO_ETH_RPC_URL?.trim() || null,
       indexerUrl,
       proxyEndpoint,
       announceAddresses: [] as string[],
@@ -67,7 +67,7 @@ export function buildDemoWalletConfig() {
     unlockParams: {
       indexerUrl: `${url.hostname}:51211`,
       proxyEndpoint: `rpc://${url.hostname}:31210/json-rpc`,
-      ethRpcUrl: Platform.OS === 'ios' ? `${mockUrl.replace(/\/$/, '')}/rpc` : null,
+      ethRpcUrl: `${mockUrl.replace(/\/$/, '')}/rpc`,
       announceAddresses: [] as string[],
       announceAlias: null,
     } as IRLNUnlockParams,

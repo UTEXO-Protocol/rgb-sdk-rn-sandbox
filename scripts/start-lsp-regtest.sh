@@ -276,7 +276,7 @@ btc_mine() {
 btc_send() {
   local addr=$1; local amt=$2
   cd "$RGBLN_REPO"
-  docker compose exec -u blits bitcoind bitcoin-cli -regtest sendtoaddress "$addr" "$amt" | tr -d '"'
+  docker compose exec -u blits bitcoind bitcoin-cli -regtest -rpcwallet=miner sendtoaddress "$addr" "$amt" | tr -d '"'
 }
 
 # ── stop mode ─────────────────────────────────────────────────────────────────

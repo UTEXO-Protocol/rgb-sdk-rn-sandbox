@@ -39,7 +39,7 @@ function buildCliCommand(args) {
     return `${CLI} -rpcwallet=miner -generate ${parts[1]}`;
   }
   if (cmd === 'sendtoaddress') {
-    return `${CLI} sendtoaddress ${parts[1]} ${parts[2]}`;
+    return `${CLI} -rpcwallet=miner sendtoaddress ${parts[1]} ${parts[2]}`;
   }
   if (cmd === 'gettxout') {
     return `${CLI} gettxout ${parts.slice(1).join(' ')}`;

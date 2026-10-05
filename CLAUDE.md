@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 End-to-end integration demo for `@utexo/rgb-sdk-rn`. An Expo + Expo Router app that runs four live RGB Lightning flows (plus VSS flows) against a local regtest stack — two or three on-device RLN nodes execute real transactions inside the app process.
 
-The SDK is consumed from **npm** — `"@utexo/rgb-sdk-rn": "1.0.0-beta.32"`, which pulls `@utexo/rgb-sdk-core@1.0.0-beta.9`. A clone plus `npm install` is enough; no sibling checkout is required.
+The SDK is consumed from **npm** — `"@utexo/rgb-sdk-rn": "1.0.0-beta.34"`, which pulls `@utexo/rgb-sdk-core@1.0.0-beta.9`. A clone plus `npm install` is enough; no sibling checkout is required.
 
 Metro uses the installed npm packages. Local SDK development requires explicitly switching the dependency to `file:../rgb-sdk-rn` and adding the linked SDK directories to `watchFolders`.
 

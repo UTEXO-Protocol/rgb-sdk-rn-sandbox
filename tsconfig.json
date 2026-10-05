@@ -7,7 +7,7 @@
         "./*"
       ],
       "@utexo/rgb-sdk-core/conformance": [
-        "../rgb-sdk-core/dist/conformance/index.d.ts"
+        "./node_modules/@utexo/rgb-sdk-rn/node_modules/@utexo/rgb-sdk-core/dist/conformance/index.d.ts"
       ]
     }
   },

@@ -1575,20 +1575,37 @@
   dependencies:
     "@noble/hashes" "1.8.0"
 
+"@noble/curves@2.4.0":
+  version "2.4.0"
+  resolved "https://registry.npmjs.org/@noble/curves/-/curves-2.4.0.tgz"
+  integrity sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==
+  dependencies:
+    "@noble/hashes" "2.4.0"
+
 "@noble/hashes@^1.8.0", "@noble/hashes@~1.8.0", "@noble/hashes@1.8.0":
   version "1.8.0"
   resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-1.8.0.tgz"
   integrity sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==
+
+"@noble/hashes@^2.0.1", "@noble/hashes@2.2.0":
+  version "2.2.0"
+  resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-2.2.0.tgz"
+  integrity sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==
 
 "@noble/hashes@1.7.0":
   version "1.7.0"
   resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-1.7.0.tgz"
   integrity sha512-HXydb0DgzTpDPwbVeDGCG1gIu7X6+AuU6Zl6av/E/KG8LMsvPntvq+w17CHRpKBmN6Ybdrt1eP3k4cj8DJa78w==
 
-"@noble/hashes@2.2.0":
-  version "2.2.0"
-  resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-2.2.0.tgz"
-  integrity sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==
+"@noble/hashes@2.4.0":
+  version "2.4.0"
+  resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz"
+  integrity sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==
+
+"@noble/secp256k1@3.0.0":
+  version "3.0.0"
+  resolved "https://registry.npmjs.org/@noble/secp256k1/-/secp256k1-3.0.0.tgz"
+  integrity sha512-NJBaR352KyIvj3t6sgT/+7xrNyF9Xk9QlLSIqUGVUYlsnDTAUqY8LOmwpcgEx4AMJXRITQ5XEVHD+mMaPfr3mg==
 
 "@nolyfill/is-core-module@1.0.39":
   version "1.0.39"
@@ -2098,6 +2115,11 @@
   resolved "https://registry.npmjs.org/@rtsao/scc/-/scc-1.1.0.tgz"
   integrity sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==
 
+"@scure/base@^2.0.0", "@scure/base@2.2.0":
+  version "2.2.0"
+  resolved "https://registry.npmjs.org/@scure/base/-/base-2.2.0.tgz"
+  integrity sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==
+
 "@scure/base@~1.2.5":
   version "1.2.6"
   resolved "https://registry.npmjs.org/@scure/base/-/base-1.2.6.tgz"
@@ -2108,10 +2130,10 @@
   resolved "https://registry.npmjs.org/@scure/base/-/base-1.2.6.tgz"
   integrity sha512-g/nm5FgUa//MCj1gV09zTJTaM6KBAHqLN907YVQqf7zC49+DcO4B1so4ZX07Ef10Twr6nuqYEH9GEggFXA4Fmg==
 
-"@scure/base@2.2.0":
-  version "2.2.0"
-  resolved "https://registry.npmjs.org/@scure/base/-/base-2.2.0.tgz"
-  integrity sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==
+"@scure/base@2.4.0":
+  version "2.4.0"
+  resolved "https://registry.npmjs.org/@scure/base/-/base-2.4.0.tgz"
+  integrity sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg==
 
 "@scure/bip32@^1.7.0":
   version "1.7.0"
@@ -2121,6 +2143,15 @@
     "@noble/curves" "~1.9.0"
     "@noble/hashes" "~1.8.0"
     "@scure/base" "~1.2.5"
+
+"@scure/bip32@^2.0.1":
+  version "2.4.0"
+  resolved "https://registry.npmjs.org/@scure/bip32/-/bip32-2.4.0.tgz"
+  integrity sha512-i3DS0CptAocyvqE4n3SUkpzeQK4vJMFwWLofTwRiiKo2aWojBOfyMCgfKw9HVpO6fSY5AK86sHS/Uzn8kK9Few==
+  dependencies:
+    "@noble/curves" "2.4.0"
+    "@noble/hashes" "2.4.0"
+    "@scure/base" "2.4.0"
 
 "@scure/bip39@^1.6.0":
   version "1.6.0"
@@ -2137,6 +2168,16 @@
   dependencies:
     "@noble/hashes" "2.2.0"
     "@scure/base" "2.2.0"
+
+"@scure/btc-signer@^2.0.1":
+  version "2.4.1"
+  resolved "https://registry.npmjs.org/@scure/btc-signer/-/btc-signer-2.4.1.tgz"
+  integrity sha512-ch6h66o9nPhEoe/KciMMUJeH2MBPB8UAJI1if35Fxl6885lKTsc9YoCRqTW0/RjI0Vv9GSg1tmKtHHODyAw81g==
+  dependencies:
+    "@noble/curves" "2.4.0"
+    "@noble/hashes" "2.4.0"
+    "@scure/base" "2.4.0"
+    micro-packed "0.11.1"
 
 "@sinclair/typebox@^0.27.8":
   version "0.27.10"
@@ -2507,9 +2548,20 @@
     "@urql/core" "^5.1.2"
     wonka "^6.3.2"
 
-"@utexo/rgb-sdk-rn@file:../rgb-sdk-rn":
-  version "1.0.0-beta.32"
-  resolved "file:../rgb-sdk-rn"
+"@utexo/rgb-sdk-core@1.0.0-beta.9":
+  version "1.0.0-beta.9"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-core/-/rgb-sdk-core-1.0.0-beta.9.tgz"
+  integrity sha512-VqCxtsV4/Bdr44fLd/DwL3XYpkbZ2BhB8cU/Glep37O/Mal1blqZPMQSoGnYqRQBL+c8xAZ7j5zxrgmIJPit3g==
+  dependencies:
+    "@noble/hashes" "^2.0.1"
+    "@noble/secp256k1" "3.0.0"
+    "@scure/bip32" "^2.0.1"
+    "@scure/bip39" "^2.0.1"
+
+"@utexo/rgb-sdk-rn@1.0.0-beta.34":
+  version "1.0.0-beta.34"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.34.tgz"
+  integrity sha512-gisfLe0a54ulZa01h0J5OZTQRS35Q0+vwIeVc3VyEiyOsIMI1p4XeB8cTc35BNr4JmCmV7OLaa23C1PE65UbYg==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "3.0.0"
@@ -6766,6 +6818,13 @@ metro@0.84.4:
     throat "^5.0.0"
     ws "^7.5.10"
     yargs "^17.6.2"
+
+micro-packed@0.11.1:
+  version "0.11.1"
+  resolved "https://registry.npmjs.org/micro-packed/-/micro-packed-0.11.1.tgz"
+  integrity sha512-agQGBnBCw8OoKQZMUxcaQPaOowdfxyEmBsq4CNAXAXCyB8KxlRG0lTl5GADJIsMEDaFb0trhXBHKYsjTWa5kuw==
+  dependencies:
+    "@scure/base" "2.4.0"
 
 micromatch@^4.0.4:
   version "4.0.8"

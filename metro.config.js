@@ -17,22 +17,17 @@ const coreEntries = new Map([
 ]);
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
-const localSdkRoot = path.dirname(sdkRequire.resolve('./package.json'));
-config.watchFolders = [...(config.watchFolders || []), localSdkRoot];
 
 config.resolver = {
   ...config.resolver,
-  nodeModulesPaths: [
-    path.resolve(__dirname, 'node_modules'),
-    path.join(localSdkRoot, 'node_modules'),
-  ],
+  nodeModulesPaths: [path.resolve(__dirname, 'node_modules')],
   unstable_enablePackageExports: false,
   // Metro's package-exports enforcement (enabled by default in Metro 0.83 / RN 0.81)
   // blocks relative imports that aren't listed in a package's `exports` field.
   // expo-constants@18 only exports `.` and `./package.json`, so `./ExponentConstants`
   // fails even though the file exists.  resolveRequest short-circuits that check.
   resolveRequest: (context, moduleName, platform) => {
-    // Share React with the linked SDK, while retaining nested dependency
+    // Share React with the installed SDK, while retaining nested dependency
     // versions (WalletConnect uses noble v1; the RGB SDK uses noble v2).
     if (
       moduleName === 'react' ||

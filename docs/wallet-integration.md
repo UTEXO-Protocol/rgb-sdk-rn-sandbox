@@ -45,7 +45,7 @@ The Wallet tab uses `buildDemoWalletConfig()` in `utils/env.ts`:
 - Normally it uses `EXPO_PUBLIC_UTEXO_NETWORK`, `EXPO_PUBLIC_UTEXO_INDEXER_URL`
   and `EXPO_PUBLIC_UTEXO_PROXY_ENDPOINT`.
 - Burn and consignment require compatible native BFA bindings and an
-  `EXPO_PUBLIC_UTEXO_ETH_RPC_URL`. The current build supports these on iOS.
+  `EXPO_PUBLIC_UTEXO_ETH_RPC_URL`. The published SDK supports these on iOS and Android.
   `EXPO_PUBLIC_DEMO_PAYOUT_CHAIN_IDS` sets permitted payout chains.
 - Setting `EXPO_PUBLIC_DEMO_MOCK_FAUCET_URL` selects the local regtest stack
   and enables test funding/mining controls. This affects only the Wallet tab.
@@ -53,12 +53,11 @@ The Wallet tab uses `buildDemoWalletConfig()` in `utils/env.ts`:
 
 WebRGB and its WalletConnect adapter use the published npm packages
 `@utexo/webrgb@^0.1.0` and `@utexo/webrgb-walletconnect@^0.1.0`.
-The SDK still uses `file:../rgb-sdk-rn`: check out its `feat/walletconnect` branch
-beside this repository and install and build it before installing the demo.
-A compatible RLN release is still pending. Fresh iOS installations require a
-compatible local archive or an explicit published version, as described in the
-SDK's `docs/webrgb.md`. Follow the native build instructions in the main README
-after those prerequisites are available.
+The demo uses the published `@utexo/rgb-sdk-rn@1.0.0-beta.34` package, which pins
+RLN `0.15.0-beta.3`. Install with `npm install --install-strategy=nested`;
+on macOS the SDK downloads the iOS bindings during installation, and Android
+resolves its bindings through Gradle. Follow the native build instructions in
+the main README after installing.
 
 ## Recovery and checks
 
