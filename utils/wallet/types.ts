@@ -1,4 +1,5 @@
 import type { UTEXOWallet, BurnOperationRecord } from '@utexo/rgb-sdk-rn';
+import type { DemoWalletNetwork } from '../env';
 import type { WalletConnectSession } from '@utexo/webrgb-walletconnect';
 
 export type WalletPrompt = {
@@ -12,7 +13,9 @@ export type DemoWalletState = {
   ready: boolean;
   busy: boolean;
   address: string;
-  network: string;
+  network: DemoWalletNetwork;
+  networkLoaded: boolean;
+  initializationDetails: string | null;
   sessions: WalletConnectSession[];
   prompt: WalletPrompt | null;
   error: string;

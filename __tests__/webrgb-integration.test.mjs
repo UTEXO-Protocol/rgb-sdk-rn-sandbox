@@ -1,5 +1,6 @@
-import { BurnOperations } from '@utexo/rgb-sdk-rn';
+import { BurnOperations, UTEXOWallet } from '@utexo/rgb-sdk-rn';
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
@@ -23,6 +24,79 @@ vm.runInNewContext(source, {
     assert.equal(name, '@utexo/rgb-sdk-rn/webrgb');
     return { WebRgbProvider };
   },
+});
+
+test('burn history reports the burned amount, never its change, through the real SDK provider', async () => {
+  const assetId = 'rgb:burn-amount';
+  const txid = 'c935a70610b2fafde779ba7f05fe211e8923a86dd6fd934542345ce4eb74c027';
+  const records = [
+    { idx: 1, txid, kind: 'Burn', status: 'Settled',
+      requestedAssignment: 'Fungible(100000)',
+      assignments: ['Fungible(900000)'] },
+    { idx: 2, txid: 'ab'.repeat(32), kind: 'Burn', status: 'Settled',
+      requestedAssignment: 'Fungible(1000000)', assignments: [] },
+    { idx: 3, txid: 'cd'.repeat(32), kind: 'Burn', status: 'Settled',
+      assignments: ['Fungible(900000)'] },
+    { idx: 4, txid: 'ef'.repeat(32), kind: 'ReceiveBlind', status: 'Settled',
+      assignments: ['Fungible(1000000)'] },
+  ];
+  let reads = 0;
+  const wallet = {
+    isDisposed: () => false,
+    async listTransfers(id) { assert.equal(this, wallet); assert.equal(id, assetId); reads++; return UTEXOWallet.prototype.listTransfers.call({ rln: { rlnListTransfers: async () => records } }, id); },
+    async refreshWallet() { assert.equal(this, wallet); },
+  };
+  const abort = new AbortController();
+  const provider = createDemoRgbProvider(wallet, {
+    context: { origin: 'https://bridge.example', signal: abort.signal, assertAuthorized() {} },
+    confirm: async () => { throw new Error('Reading history must not request a burn'); },
+    run: (_method, _args, action) => action(),
+  });
+  const transfers = await provider.listTransfers(assetId);
+  assert.equal(transfers[0].amount, 100000);
+  assert.equal(transfers[0].amountBaseUnits, '100000');
+  assert.equal(transfers[0].txid, txid);
+  assert.equal(transfers[1].amountBaseUnits, '1000000', 'Full burn with no change');
+  assert.equal(transfers[2].amount, undefined, 'Never use change if the burn amount is unknown');
+  assert.equal(transfers[2].amountBaseUnits, undefined);
+  assert.equal(transfers[3].amount, 1000000, 'Receiving is unchanged');
+  assert.equal(records[0].assignments[0], 'Fungible(900000)', 'Do not modify native transfer data');
+  assert.equal(reads, 1, 'No extra native read to correct the mapping');
+  const status = await provider.getTransferStatus(txid, assetId);
+  assert.equal(status.transfer.amount, 100000, 'Fallback status uses the same corrected mapping');
+  abort.abort();
+  await assert.rejects(provider.listTransfers(assetId), { code: 'NOT_ENABLED' });
+  assert.equal(reads, 2, 'A revoked session cannot read native history');
+});
+
+test('the installed SDK supplies exact burn amounts through the demo without a journal workaround', async () => {
+  const assetId = 'rgb:burn-amount', txid = 'c9'.repeat(32);
+  const raw = [
+    { idx: 1, txid, kind: 'Burn', status: 'Settled',
+      requestedAssignment: 'Fungible(100000)', assignments: ['Fungible(900000)'] },
+    { idx: 2, txid: 'ab'.repeat(32), kind: 'Burn', status: 'Settled',
+      requestedAssignment: 'Fungible(18446744073709551615)', assignments: [] },
+    { idx: 3, txid: 'ef'.repeat(32), kind: 'Burn', status: 'Settled', assignments: ['Fungible(42)'] },
+  ];
+  const rln = { async rlnListTransfers(id) { assert.equal(id, assetId); return raw; } };
+  const wallet = { isDisposed: () => false,
+    listTransfers: asset => UTEXOWallet.prototype.listTransfers.call({ rln }, asset) };
+  const sdk = await wallet.listTransfers(assetId);
+  assert.equal(sdk[0].requestedAssignment.amount, 100000);
+  assert.equal(sdk[0].assignments[0].amount, 900000);
+  assert.equal(sdk[0].amountBaseUnits, '100000');
+  const provider = createDemoRgbProvider(wallet, {
+    context: { origin: 'https://bridge.example', network: 'utexo', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => { throw new Error('Reading history must not request a burn'); },
+    run: (_method, _args, action) => action(),
+  });
+  const transfers = await provider.listTransfers(assetId);
+  assert.equal(transfers[0].amount, 100000);
+  assert.equal(transfers[0].amountBaseUnits, '100000');
+  assert.equal(transfers[1].amount, undefined);
+  assert.equal(transfers[1].amountBaseUnits, '18446744073709551615');
+  assert.equal(transfers[2].amountBaseUnits, undefined);
+  assert.equal(transfers.length, raw.length);
 });
 const { createDemoRgbProvider } = module.exports;
 const deferred = () => {
@@ -148,7 +222,10 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
       proofReads++;
       return bytes.toString('base64');
     },
-    listTransfers: async () => [{ txid, idx: 3, kind: 'Burn', status: 'Settled', assignments: [] }],
+    listTransfers: asset => UTEXOWallet.prototype.listTransfers.call({ rln: {
+      rlnListTransfers: async () => [{ txid, idx: 3, kind: 'Burn', status: 'Settled',
+        requestedAssignment: 'Fungible(5)', assignments: ['Fungible(95)'] }],
+    } }, asset),
     listTransactionsByTxid: async () => [{ txid, confirmationTime: { height: 100 } }],
     getNetworkInfo: async () => ({ blockHeight: 102 }),
     refreshWallet: async () => {},
@@ -169,7 +246,6 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
         },
         run: (_method, _args, action) => action(),
         burn: {
-          allowedPayoutChainIds: ['eip155:31337'],
           operations,
         },
       }),
@@ -178,7 +254,7 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   const connection = await connectWalletConnect({
     client: dapp,
     network,
-    methods: ['blindReceive', 'burnAsset', 'getConsignment', 'getTransferStatus'],
+    methods: ['blindReceive', 'burnAsset', 'getConsignment', 'getTransferStatus', 'listTransfers'],
   });
   await host.pair(connection.uri);
   const provider = await connection.approval();
@@ -197,6 +273,9 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   assert.equal(result.requestId, undefined);
   assert.equal(requests.find((r) => r.method === 'rgb_burnAsset').params[0].requestId, undefined);
   assert.ok(records[0].id, 'The journal keeps its private identifier');
+  const history = await provider.listTransfers(assetId);
+  assert.equal(history[0].amount, 5);
+  assert.equal(history[0].amountBaseUnits, '5', 'Exact burn amount survives the WalletConnect adapter');
   const proof = await provider.getConsignment({ assetId, txid });
   assert.deepEqual(Buffer.from(proof.data, 'base64'), bytes);
   assert.equal(proof.byteLength, bytes.length);
@@ -245,7 +324,6 @@ test('revoking a request during confirmation prevents the SDK from starting burn
       },
       run: (_method, _args, action) => action(),
       burn: {
-        allowedPayoutChainIds: ['eip155:31337'],
         operations: new BurnOperations({}, { readAll: async () => [], write: async () => {} }),
       },
     },

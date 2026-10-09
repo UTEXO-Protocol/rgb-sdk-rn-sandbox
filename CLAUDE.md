@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 End-to-end integration demo for `@utexo/rgb-sdk-rn`. An Expo + Expo Router app that runs four live RGB Lightning flows (plus VSS flows) against a local regtest stack — two or three on-device RLN nodes execute real transactions inside the app process.
 
-The SDK is consumed from **npm** — `"@utexo/rgb-sdk-rn": "1.0.0-beta.34"`, which pulls `@utexo/rgb-sdk-core@1.0.0-beta.9`. A clone plus `npm install` is enough; no sibling checkout is required.
+The demo uses the published `@utexo/rgb-sdk-rn@1.0.0-beta.37`, which depends on `@utexo/rgb-sdk-core@1.0.0-beta.9`. Install with `npm install --install-strategy=nested`.
 
-Metro uses the installed npm packages. Local SDK development requires explicitly switching the dependency to `file:../rgb-sdk-rn` and adding the linked SDK directories to `watchFolders`.
+Metro and Node tests use the installed package's published entry points. SDK installation downloads the matching iOS bindings; regenerate the native projects and rebuild the app after an SDK update.
 
 ## Commands
 
@@ -95,7 +95,7 @@ The Bitcoin node helper is a tiny HTTP server (minimal Python/Flask example in `
 
 ### Metro configuration (`metro.config.js`)
 
-Uses the installed npm SDK without watching sibling checkouts. `nodeModulesPaths` points to the demo's `node_modules`.
+Resolves the installed SDK's published entry points. `nodeModulesPaths` points to the demo's `node_modules`, and React/React Native resolve to the app's copies.
 
 `@utexo/rgb-sdk-core` is resolved with `createRequire` from the installed RN SDK. Both the main entry and `./conformance` are mapped to their installed files so direct demo imports work with the nested npm layout. No sibling core version is forced.
 

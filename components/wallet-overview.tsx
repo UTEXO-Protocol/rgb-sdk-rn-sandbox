@@ -3,8 +3,10 @@ import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { AppColors as C } from '@/constants/theme';
 import { demoWallet, type DemoWalletState } from '@/utils/wallet';
 import { mockFaucetEnabled } from '@/utils/mock-faucet';
+import { WalletBurn } from './wallet-burn';
+import { LOCAL_BURN_ORIGIN, payoutChainLabel } from '@/utils/wallet/burn';
 
-type Tab = 'Assets' | 'Receive' | 'Activity' | 'Tools';
+type Tab = 'Assets' | 'Receive' | 'Burn' | 'Activity' | 'Tools';
 
 export function WalletButton({ title, onPress, disabled = false }: {
   title: string; onPress: () => void; disabled?: boolean;
@@ -31,6 +33,7 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
   const [tab, setTab] = useState<Tab>('Assets');
   const [amount, setAmount] = useState('');
   const [assetId, setAssetId] = useState('');
+  const [burnAssetId, setBurnAssetId] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('60');
   const [feedback, setFeedback] = useState('');
   const [now, setNow] = useState(Date.now());
@@ -59,7 +62,7 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
 
   return <View style={styles.card}>
     <View style={styles.tabs}>
-      {(['Assets', 'Receive', 'Activity', 'Tools'] as const).map((value) =>
+      {(['Assets', 'Receive', 'Burn', 'Activity', 'Tools'] as const).map((value) =>
         <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }}
           style={[styles.tab, tab === value && styles.selectedTab]} onPress={() => { setTab(value); setFeedback(''); }}>
           <Text style={[styles.text, tab === value && styles.selectedText]}>{value}</Text>
@@ -82,6 +85,8 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
         <Text selectable style={styles.mono}>{asset.assetId}</Text>
         <WalletButton title={`Receive ${asset.ticker || asset.name}`} disabled={disabled}
           onPress={() => { setAssetId(asset.assetId); if (asset.schema === 'BFA') setAmount(''); setTab('Receive'); setFeedback(''); }} />
+        {asset.schema === 'BFA' && <WalletButton title={`Burn ${asset.ticker || asset.name}`} disabled={disabled || !state.burnAvailable}
+          onPress={() => { setBurnAssetId(asset.assetId); setTab('Burn'); setFeedback(''); }} />}
       </View>)}
       <Text style={styles.heading}>Bitcoin</Text>
       {state.btcBalance ? <>
@@ -141,6 +146,8 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
       </View>
     </>}
 
+    {tab === 'Burn' && <WalletBurn state={state} initialAssetId={burnAssetId} />}
+
     {tab === 'Activity' && <>
       <Text style={styles.heading}>Recent RGB transfers</Text>
       {!state.transfers.length && <Text style={styles.text}>
@@ -152,24 +159,30 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
           <Text style={[styles.badge, transfer.status === 'Settled' && styles.success, transfer.status === 'Failed' && styles.error]}>{transfer.status}</Text>
         </View>
         <Text style={styles.text}>{state.assets.find((asset) => asset.assetId === transfer.assetId)?.ticker || transfer.assetId}</Text>
-        {transfer.assignments.filter((assignment) => assignment.type === 'Fungible').map((assignment, index) =>
-          <Text key={index} style={styles.text}>{assignment.amount} base units</Text>)}
+        {transfer.amountBaseUnits !== undefined &&
+          <Text style={styles.text}>{transfer.amountBaseUnits} base units</Text>}
+        {transfer.kind === 'Burn' && transfer.amountBaseUnits === undefined &&
+          <Text style={styles.hint}>Burn amount unavailable</Text>}
         {!!transfer.createdAt && <Text style={styles.hint}>{new Date(transfer.createdAt * 1000).toLocaleString()}</Text>}
         <Text selectable style={styles.mono}>{transfer.txid || transfer.recipientId || `Transfer ${transfer.idx}`}</Text>
         {transfer.txid && <WalletButton title="Copy transaction ID" onPress={() => { void copy(transfer.txid!, 'Transaction ID'); }} />}
       </View>)}
       {state.transfers.length > 20 && <Text style={styles.hint}>Showing the 20 most recent transfers.</Text>}
-      {!!state.burns.length && <Text style={styles.heading}>Website burn requests</Text>}
+      {!!state.burns.length && <Text style={styles.heading}>Burn operations</Text>}
       {state.burns.map((record) => {
         const transfer = state.transfers.find((item) => item.txid === record.result?.txid && item.kind === 'Burn');
         const pending = record.state === 'pending';
         const cancelled = record.state === 'cancelled';
         const preparing = record.state === 'prepared';
-        const running = pending && state.activeRequest === 'rgb_burnAsset';
+        const local = record.metadata.origin === LOCAL_BURN_ORIGIN;
+        const running = pending && (state.activeRequest === 'rgb_burnAsset' || (local && state.busy));
         return <View key={`${record.metadata.origin}:${record.id}`} style={styles.item}>
-          <Text style={styles.assetName}>Burn · {cancelled ? 'Cancelled before execution' : preparing ? 'Preparing' : pending ? (running ? 'Processing' : 'Outcome needs review') : (transfer?.status || 'Broadcast')}</Text>
-          <Text style={styles.text}>{record.params.amount} base units · {record.metadata.origin}</Text>
+          <Text style={styles.assetName}>Burn · {cancelled ? (record.error ? 'Failed before broadcast' : 'Cancelled before execution') : preparing ? 'Preparing' : pending ? (running ? 'Processing' : 'Outcome needs review') : (transfer?.status || 'Broadcast')}</Text>
+          <Text style={styles.text}>{record.params.amount} base units · {local ? 'On this device' : record.metadata.origin}</Text>
+          <Text style={styles.text}>Payout: {payoutChainLabel(record.metadata.payout.chainId)}</Text>
+          <Text selectable style={styles.mono}>{record.metadata.payout.address}</Text>
           <Text selectable style={styles.mono}>{record.result?.txid || record.id}</Text>
+          {!!record.error && <Text style={styles.error}>{record.error}</Text>}
           {pending && !running && <Text style={styles.error}>Inspect native history before another burn. This request will not be repeated automatically.</Text>}
         </View>;
       })}
@@ -187,7 +200,7 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
       <WalletButton title="Prepare receive UTXOs" disabled={disabled} onPress={() => { void demoWallet.prepareReceive(); }} />
       {mockFaucetEnabled(state.network) && <WalletButton title="Mine 3 regtest blocks" disabled={disabled}
         onPress={() => { void demoWallet.mockFundOrMine('mine'); }} />}
-      <Text style={styles.text}>{state.burnAvailable ? 'BFA burn and proof export are available for connected websites.' : 'BFA burn is unavailable with this native build or network configuration.'}</Text>
+      <Text style={styles.text}>{state.burnAvailable ? 'Burn BFA tokens in the Burn tab or through a connected website. Saved burn proofs can be shared with the bridge through WalletConnect.' : 'BFA burn is unavailable with this native build or network configuration.'}</Text>
     </>}
     {!!feedback && <Text accessibilityLiveRegion="polite" style={styles.text}>{feedback}</Text>}
   </View>;

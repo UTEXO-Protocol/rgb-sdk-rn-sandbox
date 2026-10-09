@@ -2,14 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BurnOperations, type UTEXOWallet } from '@utexo/rgb-sdk-rn';
 import { WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk-rn/webrgb';
 import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
-import { buildDemoWalletConfig } from '../env';
+import { buildDemoWalletConfig, isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
 import { mockFaucetEnabled, mockFaucetRequest } from '../mock-faucet';
 import { createDemoRgbProvider } from './provider';
 import { WalletConnection } from './connection';
-import { openSavedWallet } from './node';
+import { describeWalletConfiguration, openSavedWallet } from './node';
 import { createBurnStore } from './storage';
+import { assertBurnBalance, formatBurnAmount, payoutChainLabel, prepareLocalBurn, type LocalBurnInput } from './burn';
 import type { DemoWalletState, WalletAsset } from './types';
 
+const NETWORK_KEY = 'utexo-demo-wallet-network-v1';
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : 'Wallet operation failed';
 
@@ -19,6 +21,8 @@ class DemoWalletService {
     busy: false,
     address: '',
     network: 'utexo',
+    networkLoaded: false,
+    initializationDetails: null,
     sessions: [],
     prompt: null,
     error: '',
@@ -36,6 +40,11 @@ class DemoWalletService {
   };
   private listeners = new Set<() => void>();
   private wallet?: UTEXOWallet;
+  private wallets = new Map<DemoWalletNetwork, UTEXOWallet>();
+  private networkPromise?: Promise<void>;
+  private changingNetwork = false;
+  private pairing = false;
+  private generation = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private account = '';
   private readonly burnStore = createBurnStore(
@@ -48,7 +57,7 @@ class DemoWalletService {
     account: () => this.account,
     methods: () => this.supportedMethods(),
     enqueue: (action) => this.enqueue(action),
-    confirm: (...args) => this.confirm(...args),
+    confirm: (...args) => this.changingNetwork ? Promise.resolve(false) : this.confirm(...args),
     provider: (context) => this.provider(context),
     set: (patch) => this.set(patch),
   });
@@ -100,30 +109,93 @@ class DemoWalletService {
     });
   }
 
+  /** Loading a preference does not open a node or contact any network. */
+  initialize() {
+    this.networkPromise ??= AsyncStorage.getItem(NETWORK_KEY)
+      .then((saved) => {
+        this.set({ network: isDemoWalletNetwork(saved) ? saved : 'utexo' });
+      })
+      .catch((error) => {
+        this.set({ error: `Could not load the saved network: ${messageOf(error)}` });
+      })
+      .finally(() => this.set({ networkLoaded: true }));
+    return this.networkPromise;
+  }
+
+  async selectNetwork(network: DemoWalletNetwork) {
+    if (!isDemoWalletNetwork(network)) throw new Error('Unsupported wallet network');
+    if (this.state.busy || this.state.prompt || this.state.activeRequest || this.pairing) return;
+    this.set({ busy: true, error: '' });
+    try {
+      await this.initialize();
+      if (network === this.state.network || this.state.prompt || this.state.activeRequest || this.pairing) return;
+      // Validate configuration before closing the current wallet.
+      buildDemoWalletConfig(network);
+      const reopen = this.state.ready;
+      this.changingNetwork = true;
+      this.generation++;
+      this.set({ message: 'Switching network…' });
+      // Revoke providers before draining queued requests, including pending proposals.
+      await this.connection.reset();
+      await this.queue;
+      await this.operations?.retryPersistence();
+      await this.wallet?.shutdown();
+      this.wallet = undefined;
+      this.operations = undefined;
+      this.account = '';
+      this.set({
+        network, ready: false, address: '', sessions: [], invoice: null,
+        initializationDetails: null,
+        btcBalance: null, assets: [], transfers: [], burns: [], updatedAt: null,
+        burnAvailable: false, activeRequest: '', lastRequest: null, refreshing: false,
+        message: 'Network selected. Open the wallet to connect.',
+      });
+      await AsyncStorage.setItem(NETWORK_KEY, network);
+      if (reopen) await this.open();
+    } catch (error) {
+      this.set({ error: messageOf(error), message: '' });
+    } finally {
+      this.changingNetwork = false;
+      this.set({ busy: false });
+    }
+  }
+
   async start() {
     if (this.state.ready || this.state.busy) return;
-    this.set({ busy: true, error: '', message: 'Opening wallet…' });
+    this.set({ busy: true, error: '' });
+    try {
+      await this.initialize();
+      await this.open();
+    } finally {
+      this.set({ busy: false });
+    }
+  }
+
+  private async open() {
+    this.set({ message: 'Opening wallet…' });
     console.info('[Wallet] Opening saved wallet');
     let wallet: UTEXOWallet | undefined;
+    const network = this.state.network;
     try {
-      const config = buildDemoWalletConfig();
-      const opened = await openSavedWallet(config);
+      const config = buildDemoWalletConfig(network);
+      this.set({ initializationDetails: describeWalletConfiguration(config) });
+      const stoppedWallet = this.wallets.get(network);
+      this.wallets.delete(network);
+      const opened = await openSavedWallet(config, stoppedWallet);
       wallet = opened.wallet;
-      const { address } = opened;
       this.account = opened.account;
       this.operations = new BurnOperations(wallet, this.burnStore);
       await this.operations.retryPersistence();
-      this.wallet = wallet;
       const capabilities = await wallet.getBfaCapabilities();
-      this.set({
-        burnAvailable:
-          capabilities.burn && capabilities.consignment && !!config.unlockParams.ethRpcUrl,
-        burns: await this.burnStore.readAll(),
-      });
+      const burns = await this.burnStore.readAll();
+      this.wallet = wallet;
+      this.wallets.set(network, wallet);
       this.set({
         ready: true,
-        network: config.network,
-        address,
+        address: opened.address,
+        burnAvailable:
+          capabilities.burn && capabilities.consignment && !!config.unlockParams.ethRpcUrl,
+        burns,
         message: 'Wallet ready. Fund the address, then prepare receive UTXOs.',
       });
       await this.readWalletData().catch((error) => {
@@ -133,10 +205,14 @@ class DemoWalletService {
       const projectId = process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
       if (projectId) await this.connection.getClient();
     } catch (error) {
-      if (!this.state.ready) await wallet?.dispose().catch(() => undefined);
+      if (!this.state.ready) {
+        await wallet?.dispose().catch(() => undefined);
+        this.wallets.delete(network);
+        this.wallet = undefined;
+        this.operations = undefined;
+        this.account = '';
+      }
       this.set({ error: messageOf(error), message: '' });
-    } finally {
-      this.set({ busy: false });
     }
   }
 
@@ -177,7 +253,7 @@ class DemoWalletService {
   }
 
   /** Local actions use the same queue as dApp requests, so native work cannot overlap. */
-  private async localAction(label: string, action: (wallet: UTEXOWallet) => Promise<void>) {
+  private async localAction<T>(label: string, action: (wallet: UTEXOWallet) => Promise<T>) {
     if (
       !this.wallet ||
       !this.state.ready ||
@@ -189,12 +265,13 @@ class DemoWalletService {
     this.set({ busy: true, error: '', message: `${label}…` });
     const operation = this.queue.then(async () => {
       console.info(`[Wallet] ${label}: started`);
-      await action(this.wallet!);
+      const result = await action(this.wallet!);
       console.info(`[Wallet] ${label}: completed`);
+      return result;
     });
     this.queue = operation.catch(() => undefined);
     try {
-      await operation;
+      return await operation;
     } catch (error) {
       console.warn(`[Wallet] ${label}: failed (see Wallet screen)`);
       this.set({ error: messageOf(error), message: '' });
@@ -269,6 +346,55 @@ class DemoWalletService {
     });
   }
 
+  async burnAsset(input: LocalBurnInput) {
+    // Copy form data before joining the shared native-operation queue.
+    const form = { ...input };
+    return this.localAction('Burn tokens', async (wallet) => {
+      if (!this.state.burnAvailable || !this.operations)
+        throw new Error('Burn is unavailable with this native build or network configuration.');
+      const generation = this.generation;
+      const operations = this.operations;
+      const asset = this.state.assets.find((item) => item.assetId === form.assetId);
+      const { params, metadata } = prepareLocalBurn(form, asset, this.state.network);
+      const assertCurrent = () => {
+        if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
+          throw new Error('Wallet changed. Review the burn again.');
+      };
+      await operations.retryPersistence();
+      if ((await operations.records()).some((record) => record.state === 'pending'))
+        throw new Error('A previous burn has an unresolved outcome. Inspect Activity before another burn.');
+      const capabilities = await wallet.getBfaCapabilities();
+      if (!capabilities.burn || !capabilities.consignment)
+        throw new Error('Native burn and proof export are unavailable.');
+      assertBurnBalance(params.amount, (await wallet.getAssetBalance(params.assetId)).spendable);
+      assertCurrent();
+      const approved = await this.confirm('Burn tokens?', 'On this device', [
+        `Asset: ${asset!.ticker || asset!.name}`,
+        `Asset ID: ${params.assetId}`,
+        `Amount: ${formatBurnAmount(params.amount, asset!.precision)} (${params.amount} base units)`,
+        `RGB network: ${metadata.network}`,
+        `Payout network: ${payoutChainLabel(metadata.payout.chainId)} (${metadata.payout.chainId})`,
+        `Payout address: ${metadata.payout.address}`,
+        `BTC fee rate: ${params.feeRate} sat/vB`,
+        `Confirmations: ${params.minConfirmations}`,
+        'This permanently burns tokens. The proof stays in your wallet. Submit it on the bridge website to request the EVM payout.',
+      ].join('\n'));
+      if (!approved) {
+        this.set({ message: 'Burn cancelled.' });
+        return;
+      }
+      assertCurrent();
+      // Recheck after approval; a displayed balance is not a reservation.
+      assertBurnBalance(params.amount, (await wallet.getAssetBalance(params.assetId)).spendable);
+      const record = await operations.execute(params, metadata, assertCurrent);
+      this.set({ message: 'Burn broadcast. The proof is saved in your wallet; request the payout on the bridge website.' });
+      await this.readWalletData().catch((error) => {
+        this.set({ error: `Burn broadcast; balances could not refresh: ${messageOf(error)}` });
+      });
+      return record;
+    });
+  }
+
   async mockFundOrMine(action: 'fund' | 'mine') {
     if (!mockFaucetEnabled(this.state.network)) return;
     return this.localAction(
@@ -307,26 +433,28 @@ class DemoWalletService {
 
   async pair(input: string) {
     if (!this.state.ready) throw new Error('Open your wallet first.');
-    return this.connection.pair(input);
+    if (this.state.busy || this.state.prompt || this.state.activeRequest || this.pairing)
+      throw new Error('Wait for the current wallet operation to finish.');
+    this.pairing = true;
+    try {
+      return await this.connection.pair(input);
+    } finally {
+      this.pairing = false;
+    }
   }
   async disconnect(topic: string) {
     return this.connection.disconnect(topic);
   }
 
   private provider(context: WalletConnectWalletContext) {
-    if (!this.wallet) throw new Error('Wallet is not ready');
+    if (!this.wallet || !this.state.ready || this.changingNetwork)
+      throw new Error('Wallet is not ready');
+    if (context.network !== this.state.network) throw new Error('Website network does not match the wallet.');
+    const generation = this.generation;
     return createDemoRgbProvider(this.wallet, {
       context,
       burn: this.state.burnAvailable
-        ? {
-            operations: this.operations!,
-            allowedPayoutChainIds: (
-              process.env.EXPO_PUBLIC_DEMO_PAYOUT_CHAIN_IDS ||
-              (mockFaucetEnabled(this.state.network) ? 'eip155:31337' : 'eip155:42161')
-            )
-              .split(',')
-              .map((value) => value.trim()),
-          }
+        ? { operations: this.operations! }
         : undefined,
       confirm: (request: WebRgbApproval) => {
         const isBurn = request.method === 'burnAsset';
@@ -349,6 +477,8 @@ class DemoWalletService {
       },
       run: (method, args, action) =>
         this.enqueue(async () => {
+          if (generation !== this.generation || this.changingNetwork || !this.state.ready)
+            throw new Error('Wallet network changed. Reconnect the website.');
           const wireMethod = `rgb_${method}`;
           const noteworthy = ['blindReceive', 'burnAsset', 'getConsignment'].includes(method);
           this.set({ activeRequest: wireMethod });

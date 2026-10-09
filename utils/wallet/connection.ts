@@ -31,9 +31,15 @@ export class WalletConnection {
   private transport?: WalletConnectWallet;
   private core?: InstanceType<typeof Core>;
   private clientPromise?: Promise<WalletClient>;
+  private resetting = false;
+  private revision = 0;
   constructor(private readonly host: Host) {}
   async getClient(): Promise<WalletClient> {
-    if (this.client) return this.client;
+    if (this.resetting) throw new Error('Wallet network is changing. Try connecting again.');
+    if (this.client) {
+      this.attach(this.client);
+      return this.client;
+    }
     if (this.clientPromise) return this.clientPromise;
     const projectId = process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
     if (!projectId || !/^[a-fA-F0-9]{32}$/.test(projectId))
@@ -51,33 +57,8 @@ export class WalletConnection {
       },
     })
       .then((client) => {
-        const transport = createWalletConnectWallet({
-          client,
-          network: this.host.network(),
-          account: this.host.account().slice(this.host.account().lastIndexOf(':') + 1),
-          methods: [...this.host.methods()],
-          approveSession: (proposal) =>
-            this.host.enqueue(() =>
-              this.host.confirm(
-                'Connect to website?',
-                proposal.origin,
-                `${proposal.name}\nNetwork: ${proposal.network}\nPermissions: ${proposal.methods.join(', ')}\nWebsite verification: ${proposal.verification}\nInvoice creation, burn and proof sharing require confirmation.`,
-                Date.now() + 240_000,
-                proposal.signal,
-              ),
-            ),
-          getProvider: (context) => this.host.provider(context),
-          onSessionConnected: (session) => {
-            this.refreshSessions();
-            this.host.set({ message: `Connected to ${sessionOrigin(session.peer.metadata.url)}` });
-          },
-          onError: (error) => {
-            console.warn('[Wallet] Connection/request delivery failed (see Wallet screen)');
-            this.host.set({ error: messageOf(error) });
-          },
-        });
         this.client = client;
-        this.transport = transport;
+        this.attach(client);
         client.on('session_delete', () => this.refreshSessions());
         client.core.expirer.on('expirer_expired', () => this.refreshSessions());
         this.refreshSessions();
@@ -87,6 +68,69 @@ export class WalletConnection {
         this.clientPromise = undefined;
       });
     return this.clientPromise;
+  }
+
+  private attach(client: WalletClient) {
+    if (this.transport || this.resetting) return;
+    const revision = ++this.revision;
+    this.transport = createWalletConnectWallet({
+      client,
+      network: this.host.network(),
+      account: this.host.account().slice(this.host.account().lastIndexOf(':') + 1),
+      methods: [...this.host.methods()],
+      approveSession: (proposal) =>
+        this.host.enqueue(() =>
+          revision !== this.revision ? Promise.resolve(false) : this.host.confirm(
+            'Connect to website?',
+            proposal.origin,
+            `${proposal.name}\nNetwork: ${proposal.network}\nPermissions: ${proposal.methods.join(', ')}\nWebsite verification: ${proposal.verification}\nInvoice creation, burn and proof sharing require confirmation.`,
+            Date.now() + 240_000,
+            proposal.signal,
+          ),
+        ),
+      getProvider: (context) => this.host.provider(context),
+      onSessionConnected: (session) => {
+        if (revision !== this.revision) return;
+        this.refreshSessions();
+        this.host.set({ message: `Connected to ${sessionOrigin(session.peer.metadata.url)}` });
+      },
+      onError: (error) => {
+        if (revision !== this.revision) return;
+        console.warn('[Wallet] Connection/request delivery failed (see Wallet screen)');
+        this.host.set({ error: messageOf(error) });
+      },
+    });
+  }
+
+  /** Detach providers immediately, then remove persisted RGB sessions before changing nodes. */
+  async reset() {
+    this.resetting = true;
+    this.revision++;
+    this.transport?.dispose();
+    this.transport = undefined;
+    try {
+      await this.clientPromise?.catch(() => undefined);
+      const client = this.client;
+      if (client) {
+        const sessions = Object.values(client.getActiveSessions()).filter((session) =>
+          Object.keys(session.namespaces).some((key) => key === 'rgb' || key.startsWith('rgb:')),
+        );
+        for (const session of sessions) {
+          try {
+            await client.disconnectSession({
+              topic: session.topic,
+              reason: { code: 6000, message: 'Wallet network changed. Reconnect the website.' },
+            });
+          } catch (error) {
+            // Expiry/deletion may win the race; a session still in storage must not be restored later.
+            if (client.getActiveSessions()[session.topic]) throw error;
+          }
+        }
+      }
+      this.host.set({ sessions: [] });
+    } finally {
+      this.resetting = false;
+    }
   }
 
   async pair(input: string) {

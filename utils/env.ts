@@ -55,10 +55,20 @@ export function buildUtexoConfig() {
   };
 }
 
-/** Only the Wallet tab opts into the isolated mock stack; other demo screens keep their config. */
-export function buildDemoWalletConfig() {
+export const DEMO_WALLET_NETWORKS = [
+  { id: 'utexo', label: 'Utexo signet' },
+  { id: 'regtest', label: 'Local regtest' },
+] as const;
+export type DemoWalletNetwork = (typeof DEMO_WALLET_NETWORKS)[number]['id'];
+export const isDemoWalletNetwork = (value: unknown): value is DemoWalletNetwork =>
+  value === 'utexo' || value === 'regtest';
+
+/** The Wallet tab selects its network explicitly; a mock URL only configures regtest. */
+export function buildDemoWalletConfig(network: DemoWalletNetwork = 'utexo') {
+  if (network === 'utexo') return { ...buildUtexoConfig(), network };
+  if (network !== 'regtest') throw new Error('Unsupported wallet network');
   const mockUrl = process.env.EXPO_PUBLIC_DEMO_MOCK_FAUCET_URL?.trim();
-  if (!mockUrl) return buildUtexoConfig();
+  if (!mockUrl) return buildRegtestConfig();
   const url = new URL(mockUrl);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
     throw new Error('Use an HTTP URL for the local regtest mock faucet');
