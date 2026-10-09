@@ -56,3 +56,7 @@ logs/
 graphify-out/
 research
 e2e-fixtures.json
+# Local development infrastructure lives outside this repository
+/.mock-faucet/
+/scripts/mock-faucet/
+/scripts/use-local-webrgb.mjs

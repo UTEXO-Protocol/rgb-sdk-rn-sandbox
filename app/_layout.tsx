@@ -1,18 +1,7 @@
-// MUST be first import - polyfill for crypto.getRandomValues()
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
-import { Buffer } from 'buffer';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-get-random-values';
 import 'react-native-reanimated';
-
-// Polyfills for Node.js standard library modules (Metro resolver handles imports)
-// These are imported here to ensure they're loaded before rgb-sdk-rn
-import 'os-browserify';
-import 'path-browserify';
-
-// Make Buffer available globally
-global.Buffer = Buffer;
 
 import { AppColors } from '@/constants/theme';
 

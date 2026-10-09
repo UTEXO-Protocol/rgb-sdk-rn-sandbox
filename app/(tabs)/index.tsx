@@ -194,7 +194,7 @@ export default function DocsScreen() {
           <View style={styles.badgeRow}>
             <VersionBadge
               label="package"
-              value="@utexo/rgb-sdk-rn (local)"
+              value="@utexo/rgb-sdk-rn@1.0.0-beta.37"
               accent
             />
             {Platform.OS === 'android' && (

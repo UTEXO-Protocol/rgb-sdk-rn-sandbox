@@ -45,11 +45,41 @@ export function buildUtexoConfig() {
   return {
     network,
     unlockParams: {
+      ethRpcUrl: process.env.EXPO_PUBLIC_UTEXO_ETH_RPC_URL?.trim() || null,
       indexerUrl,
       proxyEndpoint,
       announceAddresses: [] as string[],
       announceAlias: null as string | null,
       // gossipRgsServerUrl,
+    } as IRLNUnlockParams,
+  };
+}
+
+export const DEMO_WALLET_NETWORKS = [
+  { id: 'utexo', label: 'Utexo signet' },
+  { id: 'regtest', label: 'Local regtest' },
+] as const;
+export type DemoWalletNetwork = (typeof DEMO_WALLET_NETWORKS)[number]['id'];
+export const isDemoWalletNetwork = (value: unknown): value is DemoWalletNetwork =>
+  value === 'utexo' || value === 'regtest';
+
+/** The Wallet tab selects its network explicitly; a mock URL only configures regtest. */
+export function buildDemoWalletConfig(network: DemoWalletNetwork = 'utexo') {
+  if (network === 'utexo') return { ...buildUtexoConfig(), network };
+  if (network !== 'regtest') throw new Error('Unsupported wallet network');
+  const mockUrl = process.env.EXPO_PUBLIC_DEMO_MOCK_FAUCET_URL?.trim();
+  if (!mockUrl) return buildRegtestConfig();
+  const url = new URL(mockUrl);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+    throw new Error('Use an HTTP URL for the local regtest mock faucet');
+  return {
+    network: 'regtest' as const,
+    unlockParams: {
+      indexerUrl: `${url.hostname}:51211`,
+      proxyEndpoint: `rpc://${url.hostname}:31210/json-rpc`,
+      ethRpcUrl: `${mockUrl.replace(/\/$/, '')}/rpc`,
+      announceAddresses: [] as string[],
+      announceAlias: null,
     } as IRLNUnlockParams,
   };
 }
