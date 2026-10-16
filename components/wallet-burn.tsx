@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
 import { demoWallet, type DemoWalletState } from '@/utils/wallet';
-import { burnMaxAmount, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
+import { burnMaxAmount, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
 
 export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletState; initialAssetId?: string }) {
   const assets = state.assets.filter((asset) => asset.schema === 'BFA');
@@ -16,7 +16,7 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
   const busy = state.busy || !!state.prompt || !!state.activeRequest;
   const pending = state.burns.some((record) => record.state === 'pending');
   const unavailable = !state.ready || !state.burnAvailable || busy || pending;
-  const form = { assetId, amount, payoutChainId: `eip155:${payoutChainId.trim()}`, payoutAddress };
+  const form = { assetId, amount, payoutChainId: payoutChainIdFromInput(payoutChainId), payoutAddress };
   let validation = '';
   try { prepareLocalBurn(form, asset, state.network); }
   catch (error) { validation = error instanceof Error ? error.message : 'Check the burn details.'; }
@@ -24,7 +24,7 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
   const latestAsset = state.assets.find((item) => item.assetId === latest?.params.assetId);
 
   return <View style={styles.group}>
-    <Text style={styles.heading}>Burn for an EVM payout</Text>
+    <Text style={styles.heading}>Burn for an EVM or Tron payout</Text>
     <Text style={styles.text}>Burn BFA tokens here, then use the saved proof on the bridge website to request your payout.</Text>
     {!state.burnAvailable && <Text style={styles.warning}>Burn requires a compatible native build and Ethereum RPC configuration.</Text>}
     {!assets.length && <Text style={styles.text}>No BFA assets in this wallet. Receive a bridge asset first.</Text>}
@@ -56,14 +56,15 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
           <Text style={styles.buttonText}>Max</Text>
         </Pressable>
       </View>
-      <Text style={styles.label}>EVM payout chain ID</Text>
-      <TextInput accessibilityLabel="EVM payout chain ID" value={payoutChainId} onChangeText={setPayoutChainId}
-        placeholder="e.g. 1" placeholderTextColor={C.textTertiary} keyboardType="number-pad"
+      <Text style={styles.label}>Payout chain</Text>
+      <TextInput accessibilityLabel="Payout chain" value={payoutChainId} onChangeText={setPayoutChainId}
+        placeholder="e.g. 1 or tron:728126428" placeholderTextColor={C.textTertiary}
+        autoCapitalize="none" autoCorrect={false}
         editable={!unavailable} style={styles.input} />
-      <Text style={styles.hint}>Ethereum: 1 · Arbitrum One: 42161</Text>
-      <Text style={styles.label}>EVM payout address</Text>
-      <TextInput accessibilityLabel="EVM payout address" value={payoutAddress} onChangeText={setPayoutAddress}
-        placeholder="0x…" placeholderTextColor={C.textTertiary} autoCapitalize="none" autoCorrect={false}
+      <Text style={styles.hint}>Ethereum: 1 · Arbitrum One: 42161 · Tron: tron:728126428 (Shasta: tron:2494104990, Nile: tron:3448148188)</Text>
+      <Text style={styles.label}>Payout address</Text>
+      <TextInput accessibilityLabel="Payout address" value={payoutAddress} onChangeText={setPayoutAddress}
+        placeholder="0x… or T…" placeholderTextColor={C.textTertiary} autoCapitalize="none" autoCorrect={false}
         editable={!unavailable} style={styles.input} />
       <Text style={styles.hint}>The wallet uses 2 sat/vB and requires 3 confirmations. BTC is needed for the network fee. You will review all details before burning.</Text>
       {!!amount.trim() && !!payoutAddress.trim() && !!validation && <Text accessibilityRole="alert" style={styles.warning}>{validation}</Text>}

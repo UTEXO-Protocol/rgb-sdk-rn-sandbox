@@ -27,12 +27,14 @@ invoice, and burn BFA assets directly in the Wallet tab without a website sessio
 
 1. Open **Wallet → Burn**, or tap **Burn** on a BFA asset in **Assets**.
 2. Select the asset, enter a token amount (not base units), or use **Max**.
-   Enter the EVM payout chain ID and recipient address.
+   Enter the payout chain and recipient address: an EVM chain ID (`1`, `42161`)
+   with a `0x…` address, or a Tron chain (`tron:728126428`; Shasta
+   `tron:2494104990`, Nile `tron:3448148188`) with a `T…` Base58Check address.
 3. Tap **Review burn** and approve the asset, amount, network, recipient and
    Bitcoin fee in the confirmation dialog. The wallet uses the same defaults as
    website burns: 2 sat/vB and at least 3 confirmations. Keep BTC available for fees.
 4. The transaction ID and payout details appear in Burn and Activity. This is a
-   Bitcoin burn, not confirmation of an EVM payout. Connect the wallet to the
+   Bitcoin burn, not confirmation of the payout. Connect the wallet to the
    bridge and choose **Existing burn → From wallet** to retrieve its consignment
    and request the payout. The wallet never submits `/unlock` itself.
 

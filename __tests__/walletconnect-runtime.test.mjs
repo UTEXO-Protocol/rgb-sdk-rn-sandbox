@@ -1,5 +1,5 @@
 import { BurnOperations, normalizeBurnRecord } from '@utexo/rgb-sdk-rn';
-import { encodeEvmBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
+import { encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -55,7 +55,7 @@ function fixture(init, modules = {}) {
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], encodeEvmBurnRecipient };
+      if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], encodeEvmBurnRecipient, encodeTronBurnRecipient };
       if (name === '@walletconnect/core') return { Core: class { constructor() { stats.cores++; } } };
       if (name === '@reown/walletkit') return { WalletKit: { init: (options) => {
         stats.clients++;
@@ -672,6 +672,23 @@ test('local burn converts decimal amounts exactly and persists without a website
   assert.equal(persisted[0].state, 'complete');
 });
 
+test('local burn to Tron keeps the Base58Check address and encodes the account bytes', async (t) => {
+  const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
+  const wallet = load();
+  await wallet.start();
+  t.after(() => wallet.snapshot().prompt?.resolve(false));
+  const tronAddress = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+  const task = wallet.burnAsset({ ...localBurnForm, payoutChainId: 'tron:728126428', payoutAddress: tronAddress });
+  const prompt = await waitForBurnPrompt(wallet);
+  assert.match(prompt.details, /Payout network: Tron \(tron:728126428\)/);
+  assert.ok(prompt.details.includes(tronAddress));
+  prompt.resolve(true);
+  const result = await task;
+  assert.equal(result.state, 'complete');
+  assert.equal(native.burns[0].burnRecipient, encodeTronBurnRecipient(tronAddress));
+  assert.deepEqual(result.metadata.payout, { chainId: 'tron:728126428', address: tronAddress });
+});
+
 test('rejecting a local burn neither invokes native burn nor creates a journal entry', async () => {
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
   const wallet = load();
@@ -693,7 +710,9 @@ test('local burn rejects invalid amounts, non-BFA assets, recipients and payout 
     { amount: '-1' }, { amount: '18446744073709551616' },
     { assetId: 'rgb:nia' }, { assetId: 'rgb:absent' },
     { payoutAddress: '0x' + '0'.repeat(40) }, { payoutAddress: 'not-an-address' },
-    { payoutChainId: 'eip155:0' },
+    { payoutChainId: 'eip155:0' }, { payoutChainId: 'tron:1' }, { payoutChainId: 'solana:1' },
+    { payoutChainId: 'tron:728126428' }, // EVM address on a Tron chain.
+    { payoutChainId: 'tron:728126428', payoutAddress: 'tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t' },
   ]) {
     await wallet.burnAsset({ ...localBurnForm, ...invalid });
     assert.ok(wallet.snapshot().error, JSON.stringify(invalid));

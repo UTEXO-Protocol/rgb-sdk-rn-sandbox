@@ -377,7 +377,7 @@ class DemoWalletService {
         `Payout address: ${metadata.payout.address}`,
         `BTC fee rate: ${params.feeRate} sat/vB`,
         `Confirmations: ${params.minConfirmations}`,
-        'This permanently burns tokens. The proof stays in your wallet. Submit it on the bridge website to request the EVM payout.',
+        'This permanently burns tokens. The proof stays in your wallet. Submit it on the bridge website to request the payout.',
       ].join('\n'));
       if (!approved) {
         this.set({ message: 'Burn cancelled.' });
