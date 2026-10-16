@@ -1,4 +1,4 @@
-import { encodeEvmBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
+import { encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletAsset } from './types';
 
@@ -11,7 +11,21 @@ export type LocalBurnInput = {
   payoutAddress: string;
 };
 
+// CAIP-2 Tron chains accepted by the SDK burn recipient validator.
+const TRON_CHAINS: Record<string, string> = {
+  'tron:728126428': 'Tron',
+  'tron:2494104990': 'Tron Shasta',
+  'tron:3448148188': 'Tron Nile',
+};
+
+/** A bare number is an EVM chain ID; anything else must be a full CAIP-2 ID. */
+export function payoutChainIdFromInput(value: string): string {
+  const text = value.trim();
+  return /^[0-9]+$/.test(text) ? `eip155:${text}` : text;
+}
+
 export function payoutChainLabel(chainId: string): string {
+  if (TRON_CHAINS[chainId]) return TRON_CHAINS[chainId];
   if (chainId === 'eip155:1') return 'Ethereum';
   if (chainId === 'eip155:42161') return 'Arbitrum One';
   if (chainId === 'eip155:31337') return 'Local EVM (31337)';
@@ -59,10 +73,19 @@ export function assertBurnBalance(amount: string, available: number | undefined)
 export function prepareLocalBurn(input: LocalBurnInput, asset: WalletAsset | undefined, network: DemoWalletNetwork) {
   if (!asset || asset.assetId !== input.assetId || asset.schema !== 'BFA')
     throw new Error('Select a BFA asset held by this wallet.');
-  if (!/^eip155:[1-9][0-9]*$/.test(input.payoutChainId))
-    throw new Error('Enter a valid EVM payout chain ID.');
   const address = input.payoutAddress.trim();
-  const recipient = encodeEvmBurnRecipient(address);
+  let recipient: string;
+  let payoutAddress: string;
+  if (/^eip155:[1-9][0-9]*$/.test(input.payoutChainId)) {
+    recipient = encodeEvmBurnRecipient(address);
+    payoutAddress = address.toLowerCase();
+  } else if (TRON_CHAINS[input.payoutChainId]) {
+    recipient = encodeTronBurnRecipient(address);
+    // Base58Check is case-sensitive; keep the address exactly as entered.
+    payoutAddress = address;
+  } else {
+    throw new Error('Enter an EVM chain ID or a supported Tron chain.');
+  }
   const amount = burnBaseUnits(input.amount, asset.precision);
   assertBurnBalance(amount, asset.balance.spendable);
   return {
@@ -73,7 +96,7 @@ export function prepareLocalBurn(input: LocalBurnInput, asset: WalletAsset | und
     },
     metadata: {
       origin: LOCAL_BURN_ORIGIN, network,
-      payout: { chainId: input.payoutChainId, address: address.toLowerCase() },
+      payout: { chainId: input.payoutChainId, address: payoutAddress },
     },
   };
 }
