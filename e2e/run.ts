@@ -26,6 +26,8 @@ import { scenarioC } from './scenarios/c-assets';
 import { scenarioD } from './scenarios/d-inflation';
 import { scenarioE } from './scenarios/e-lightning';
 import { scenarioH } from './scenarios/h-restore';
+import { scenarioI } from './scenarios/i-restore-claimed-rgb';
+import { scenarioJ } from './scenarios/j-restore-claimed-rgb-signet';
 
 type Scenario = (ctx: ScenarioContext) => Promise<void>;
 
@@ -36,6 +38,8 @@ const SCENARIOS: { id: string; title: string; run: Scenario }[] = [
   { id: 'D', title: 'IFA + inflation', run: scenarioD },
   { id: 'E', title: 'lightning', run: scenarioE },
   { id: 'H', title: 'backup survives device loss', run: scenarioH },
+  { id: 'I', title: 'restore after a claimed RGB payment (rgb-sdk-rn#58)', run: scenarioI },
+  { id: 'J', title: 'restore after a claimed RGB payment on signet (rgb-sdk-rn#58)', run: scenarioJ },
 ];
 
 export const SCENARIO_IDS = SCENARIOS.map((s) => s.id);

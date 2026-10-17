@@ -29,6 +29,8 @@ export interface E2EFixtures {
   generatedAt: string;
   ASSET_ID?: string;
   IFA_ASSET_ID?: string;
+  IFA_PRECISION?: number;
+  MIN_AMT_MSAT?: number;
   LSP_PUBKEY: string;
   FAUCET_PUBKEY: string;
   LSP_URL: string;
@@ -159,6 +161,8 @@ export async function bootWallet(
      * first boot, and exactly what must NOT be set when verifying a restore.
      */
     allowEmptyRestore?: boolean;
+    /** Runs between construction and `init()` — `createLsp()` must happen here. */
+    beforeInit?: (wallet: UTEXOWallet) => Promise<void>;
   } = {}
 ): Promise<BootedWallet> {
   const password = opts.password ?? 'e2e-password';
@@ -189,6 +193,7 @@ export async function bootWallet(
   );
 
   try {
+    if (opts.beforeInit) await opts.beforeInit(wallet);
     await wallet.init();
     // A wiped device leaves its single-writer fence behind; clearing it is what
     // lets the new node claim the store. No-op when there is nothing to clear.

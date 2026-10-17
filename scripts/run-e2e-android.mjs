@@ -196,6 +196,7 @@ async function main() {
   const fx = loadFixtures();
   const app = loadAppIdentity();
   if (options.only.split(',').includes('H') && !fx.VSS_URL) die('Scenario H requires VSS_URL in fixtures; start the stack with VSS=1.');
+  if (options.only.split(',').includes('I') && !fx.VSS_URL) die('Scenario I requires VSS_URL in fixtures; start the stack with VIRTUAL_OPEN_MODE= VSS=1.');
   if (options.platform === 'ios' && !options.noLaunch) {
     const installed = simctl(['get_app_container', options.device, app.pkg, 'app']);
     if (installed.status !== 0) die('Install the demo with npm run ios first.');
