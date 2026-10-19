@@ -1,8 +1,10 @@
+import { localBfaBurnDestination, burnDestinationHash } from '@utexo/rgb-sdk-rn';
 import { BurnOperations, UTEXOWallet } from '@utexo/rgb-sdk-rn';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
 import { EventEmitter } from 'node:events';
+import { formatJsonRpcError } from '@walletconnect/jsonrpc-utils';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -99,6 +101,30 @@ test('the installed SDK supplies exact burn amounts through the demo without a j
   assert.equal(transfers.length, raw.length);
 });
 const { createDemoRgbProvider } = module.exports;
+for (const method of ['blindReceive', 'witnessReceive']) {
+  test(`demo ${method} forwards an open invoice with a 24-hour default and explicit TTL`, async () => {
+    const calls = [];
+    const approvals = [];
+    const wallet = {
+      isDisposed: () => false,
+      [method]: async (params) => {
+        calls.push(params);
+        return { invoice: 'rgb:invoice', recipientId: 'receiver', expirationTimestamp: 1234 };
+      },
+    };
+    const provider = createDemoRgbProvider(wallet, {
+      context: { origin: 'https://bridge.example', signal: new AbortController().signal, assertAuthorized() {} },
+      confirm: async (request) => { approvals.push(request); return true; },
+      run: (_method, _args, action) => action(),
+    });
+    await provider[method]();
+    await provider[method]({ durationSeconds: 90 });
+    assert.deepEqual(calls, [86400, 90].map(durationSeconds => ({
+      assetId: undefined, amount: undefined, durationSeconds, minConfirmations: 3,
+    })));
+    assert.deepEqual(approvals.map(request => request.params), calls);
+  });
+}
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((a, b) => {
@@ -108,7 +134,14 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-test('packed adapter connects the demo wallet provider, creates an invoice and returns a complete burn proof', async (t) => {
+for (const [chainId, address] of [
+  ['eip155:42161', '0x' + '12'.repeat(20)],
+  ['eip155:1', '0x' + '12'.repeat(20)],
+  ['eip155:137', '0x' + '12'.repeat(20)],
+  ['eip155:9745', '0x' + '12'.repeat(20)],
+  ['tron:728126428', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'],
+]) {
+test(`packed adapter connects the wallet and returns a complete V1 burn proof for ${chainId}`, async (t) => {
   const approved = deferred(),
     events = new EventEmitter(),
     dappEvents = new EventEmitter();
@@ -194,7 +227,10 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
       approved.reject(reason);
     },
     async respondSessionRequest({ response }) {
-      const value = JSON.parse(JSON.stringify(response));
+      // WalletKit normalizes reserved JSON-RPC errors; -32603 loses its details.
+      const value = JSON.parse(JSON.stringify(response.error
+        ? formatJsonRpcError(response.id, response.error)
+        : response));
       if (value.error) pending.get(value.id).reject(value.error);
       else pending.get(value.id).resolve(value.result);
     },
@@ -205,6 +241,9 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
     isDisposed: () => false,
     getNetwork: () => network,
     getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    async getAssetBalance() {
+      throw Object.assign(new Error('Unknown RGB contract ID'), { code: 'NotFound' });
+    },
     blindReceive: async (args) => ({
       invoice: 'rgb:invoice',
       recipientId: 'bcrt:utxob:receiver',
@@ -214,7 +253,7 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
     async burn(params) {
       assert.equal(records[0].state, 'pending');
       assert.equal(params.amount, '5');
-      assert.equal(params.burnRecipient, '0'.repeat(24) + '12'.repeat(20));
+      assert.equal(params.burnRecipient, burnDestinationHash(destination));
       burns++;
       return { txid, batchTransferIdx: 8 };
     },
@@ -230,7 +269,8 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
     getNetworkInfo: async () => ({ blockHeight: 102 }),
     refreshWallet: async () => {},
   };
-  const operations = new BurnOperations(native, { readAll: async () => records, write: async record => { records[0] = record; } });
+  const destination = localBfaBurnDestination({ chainId, address });
+  const operations = new BurnOperations(native, { readAll: async () => records, write: async record => { records[0] = record; } }, { destinationV1: true });
   const host = createWalletConnectWallet({
     client: walletKit,
     network,
@@ -254,22 +294,35 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   const connection = await connectWalletConnect({
     client: dapp,
     network,
-    methods: ['blindReceive', 'burnAsset', 'getConsignment', 'getTransferStatus', 'listTransfers'],
+    methods: ['blindReceive', 'burnAsset', 'getConsignment', 'getTransferStatus', 'listTransfers', 'getAssetBalance'],
   });
   await host.pair(connection.uri);
   const provider = await connection.approval();
   t.after(() => provider.dispose());
   await provider.enable();
+  await assert.rejects(provider.getAssetBalance(assetId), {
+    code: 'ASSET_NOT_FOUND',
+    message: 'This asset is not in this wallet yet. Receive it first, then refresh your balance.',
+  });
+  assert.equal(burns, 0);
+  assert.equal(records.length, 0);
+  assert.equal(confirmations.length, 0);
+  native.getAssetBalance = async () => ({ settled: 10, future: 10, spendable: 10 });
+  assert.equal((await provider.getAssetBalance(assetId)).balance, 10);
   assert.equal((await provider.blindReceive({ amount: 5 })).invoice, 'rgb:invoice');
   const result = await provider.burnAsset({
     network,
     assetId,
     amount: '5',
-    burnRecipient: { chainId: 'eip155:31337', address: '0x' + '12'.repeat(20) },
+    burnRecipient: { chainId, address },
+    burnDestination: destination,
     feeRate: 2,
     minConfirmations: 3,
   });
   assert.equal(result.transferId, txid);
+  assert.deepEqual(result.burnDestination, destination);
+  assert.equal((await provider.getInfo()).burnDestinationVersion, 1);
+  assert.deepEqual((await provider.getInfo()).burnDestinationRoutes, [{ chainId: 'eip155:42161', dstEid: 0 }, { chainId: 'eip155:1', dstEid: 30101 }, { chainId: 'eip155:137', dstEid: 30109 }, { chainId: 'eip155:9745', dstEid: 30383 }, { chainId: 'tron:728126428', dstEid: 30420 }]);
   assert.equal(result.requestId, undefined);
   assert.equal(requests.find((r) => r.method === 'rgb_burnAsset').params[0].requestId, undefined);
   assert.ok(records[0].id, 'The journal keeps its private identifier');
@@ -283,12 +336,15 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   const status = await provider.getTransferStatus(txid, assetId);
   assert.equal(status.status, 'Settled');
   assert.equal(status.transfer.blockHeight, 100);
+  assert.deepEqual(status.transfer.burnDestination, destination);
   assert.equal(status.transfer.requestId, undefined);
   assert.equal(burns, 1);
   assert.equal(proofReads, 1);
   assert.deepEqual(confirmations, ['blindReceive', 'burnAsset']);
   await provider.disconnect();
 });
+
+}
 
 test('revoking a request during confirmation prevents the SDK from starting burn', async () => {
   let authorized = true,

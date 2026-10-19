@@ -9,9 +9,9 @@ function walletNodeParams(network: ReturnType<typeof buildDemoWalletConfig>['net
   return {
     network,
     storageDirPath: `${FileSystem.documentDirectory}wallet-connect-v1/${network}`.replace(/^file:\/\//, ''),
-    daemonListeningPort: 30170,
-    ldkPeerListeningPort: 19750,
-    reuseAddresses: true,
+    daemonListeningPort: 32170,
+    ldkPeerListeningPort: 21750,
+    reuseAddresses: false,
   };
 }
 

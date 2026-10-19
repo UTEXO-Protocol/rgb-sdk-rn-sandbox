@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BurnOperations, type UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { BurnOperations, createBurnPackage, type UTEXOWallet } from '@utexo/rgb-sdk-rn';
 import { WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk-rn/webrgb';
 import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
 import { buildDemoWalletConfig, isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
@@ -184,7 +184,7 @@ class DemoWalletService {
       const opened = await openSavedWallet(config, stoppedWallet);
       wallet = opened.wallet;
       this.account = opened.account;
-      this.operations = new BurnOperations(wallet, this.burnStore);
+      this.operations = new BurnOperations(wallet, this.burnStore, { destinationV1: true });
       await this.operations.retryPersistence();
       const capabilities = await wallet.getBfaCapabilities();
       const burns = await this.burnStore.readAll();
@@ -307,12 +307,6 @@ class DemoWalletService {
       const asset = this.state.assets.find((item) => item.assetId === assetId);
       if (assetId && !asset)
         throw new Error('Select an asset in this wallet, or choose Any / new asset.');
-      // The current BFA build rejects Fungible(amount) with a BFA schema in receive.
-      // Never silently drop the user's requested asset or amount.
-      if (asset?.schema === 'BFA' && amount !== undefined)
-        throw new Error(
-          'This BFA build requires an open amount. Leave amount empty, or select Any / new asset to request a fixed amount.',
-        );
       const result = await wallet.blindReceive({
         assetId,
         amount,
@@ -395,6 +389,24 @@ class DemoWalletService {
     });
   }
 
+  async exportBurnFiles(id: string) {
+    return this.localAction('Export burn files', async (wallet) => {
+      const record = (await this.operations?.records())?.find((item) => item.id === id);
+      if (record?.state !== 'complete' || !record.result || !record.metadata.burnDestination)
+        throw new Error('No complete V1 burn with saved payout details.');
+      const proof = await wallet.getConsignment(record.params.assetId, record.result.txid);
+      const packaged = createBurnPackage(proof, record.metadata.burnDestination);
+      const fs = await import('expo-file-system/legacy');
+      const permission = await fs.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!permission.granted) return;
+      const stem = `burn-${record.result.txid}`;
+      const file = await fs.StorageAccessFramework.createFileAsync(
+        permission.directoryUri, `${stem}.utexoburn`, 'application/json');
+      await fs.writeAsStringAsync(file, packaged);
+      this.set({ message: 'Saved one .utexoburn file with the RGB proof and matching payout details.' });
+    });
+  }
+
   async mockFundOrMine(action: 'fund' | 'mine') {
     if (!mockFaucetEnabled(this.state.network)) return;
     return this.localAction(
@@ -463,7 +475,7 @@ class DemoWalletService {
           | { chainId: string; address: string }
           | undefined;
         const details = isBurn
-          ? `Asset: ${request.params.assetId}\nAmount: ${request.params.amount} base units\nRGB network: ${this.state.network}\nPayout network: ${recipient?.chainId}\nPayout address: ${recipient?.address}\nBTC fee rate: ${request.params.feeRate} sat/vB\nConfirmations: ${request.params.minConfirmations}\nThis permanently burns tokens and allows this website to receive the burn proof.`
+          ? `Asset: ${request.params.assetId}\nAmount: ${request.params.amount} base units\nRGB network: ${this.state.network}\nPayout network: ${recipient ? payoutChainLabel(recipient.chainId) : 'Unknown'} (${recipient?.chainId})\nPayout address: ${recipient?.address}\nBTC fee rate: ${request.params.feeRate} sat/vB\nConfirmations: ${request.params.minConfirmations}\nThis permanently burns tokens and allows this website to receive the burn proof.`
           : isProof
             ? `Share the burn proof and its asset history with this website?\nAsset: ${request.params.assetId}\nTransaction: ${request.params.txid}`
             : `Asset: ${request.params.assetId ?? 'Any asset (including a new asset)'}\nAmount: ${request.params.amount ?? 'Any amount'} base units\nNetwork: ${this.state.network}\nConfirmations: ${request.params.minConfirmations}\nExpires in: ${request.params.durationSeconds} seconds`;

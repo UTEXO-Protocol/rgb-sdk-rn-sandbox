@@ -594,7 +594,7 @@ export default function UtexoScreen() {
       // or also affects plain on-chain RGB sends. Remove once that's confirmed.
       try {
         req('TEMP nodeB.blindReceive');
-        const invOnchain = await wB.blindReceive({ minConfirmations: 1, durationSeconds: 3600 });
+        const invOnchain = await wB.blindReceive({ minConfirmations: 1, durationSeconds: 86400 });
         res('TEMP nodeB.blindReceive', { recipientId: String(invOnchain.recipientId).slice(0, 20) + '…' });
 
         req('TEMP nodeA.send', { amount: 100, assetId: assetId.slice(0, 16) + '…' });

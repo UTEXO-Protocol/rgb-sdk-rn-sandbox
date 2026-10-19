@@ -49,11 +49,11 @@ export class WalletConnection {
     this.clientPromise = WalletKit.init({
       core: this.core,
       metadata: {
-        name: 'UTEXO Demo Wallet',
-        description: 'RGB wallet demo',
+        name: 'Utexo BFA Local Test',
+        description: 'Local BFA test wallet',
         url: 'https://utexo.com',
         icons: [],
-        redirect: { native: 'myapp://wallet' },
+        redirect: { native: 'utexobfalocal://wallet' },
       },
     })
       .then((client) => {

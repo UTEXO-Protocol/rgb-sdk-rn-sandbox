@@ -1,6 +1,7 @@
 import { encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletAsset } from './types';
+import { localBfaBurnDestination } from '@utexo/rgb-sdk-rn';
 
 export const LOCAL_BURN_ORIGIN = 'local:wallet';
 
@@ -28,6 +29,8 @@ export function payoutChainLabel(chainId: string): string {
   if (TRON_CHAINS[chainId]) return TRON_CHAINS[chainId];
   if (chainId === 'eip155:1') return 'Ethereum';
   if (chainId === 'eip155:42161') return 'Arbitrum One';
+  if (chainId === 'eip155:137') return 'Polygon';
+  if (chainId === 'eip155:9745') return 'Plasma';
   if (chainId === 'eip155:31337') return 'Local EVM (31337)';
   return `EVM chain ${chainId.replace('eip155:', '')}`;
 }
@@ -86,6 +89,7 @@ export function prepareLocalBurn(input: LocalBurnInput, asset: WalletAsset | und
   } else {
     throw new Error('Enter an EVM chain ID or a supported Tron chain.');
   }
+  localBfaBurnDestination({ chainId: input.payoutChainId, address: payoutAddress });
   const amount = burnBaseUnits(input.amount, asset.precision);
   assertBurnBalance(amount, asset.balance.spendable);
   return {

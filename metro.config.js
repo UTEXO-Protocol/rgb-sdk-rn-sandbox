@@ -17,6 +17,7 @@ const coreEntries = new Map([
 ]);
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
+config.maxWorkers = 2;
 
 config.resolver = {
   ...config.resolver,

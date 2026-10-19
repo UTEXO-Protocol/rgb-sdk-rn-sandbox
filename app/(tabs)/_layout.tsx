@@ -8,6 +8,7 @@ import { AppColors } from '@/constants/theme';
 export default function TabLayout() {
   return (
     <Tabs
+      initialRouteName="wallet"
       screenOptions={{
         headerShown: false,
         tabBarButton: HapticTab,
@@ -28,6 +29,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Docs',
+          href: null,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="book.fill" color={color} />,
         }}
       />
@@ -35,6 +37,7 @@ export default function TabLayout() {
         name="flows"
         options={{
           title: 'Flows',
+          href: null,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="play.circle.fill" color={color} />,
         }}
       />
@@ -42,6 +45,7 @@ export default function TabLayout() {
         name="utexo"
         options={{
           title: 'Signet',
+          href: null,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="play.circle.fill" color={color} />,
         }}
       />
@@ -56,6 +60,7 @@ export default function TabLayout() {
         name="lsp"
         options={{
           title: 'LSP',
+          href: null,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="play.circle.fill" color={color} />,
         }}
       />

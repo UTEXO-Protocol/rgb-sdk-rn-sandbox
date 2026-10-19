@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
 import { demoWallet, type DemoWalletState } from '@/utils/wallet';
-import { burnMaxAmount, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
+import { burnMaxAmount, formatBurnAmount, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
 
 export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletState; initialAssetId?: string }) {
   const assets = state.assets.filter((asset) => asset.schema === 'BFA');
@@ -20,12 +20,12 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
   let validation = '';
   try { prepareLocalBurn(form, asset, state.network); }
   catch (error) { validation = error instanceof Error ? error.message : 'Check the burn details.'; }
-  const latest = state.burns.filter((record) => record.metadata.origin === LOCAL_BURN_ORIGIN && record.state === 'complete').at(-1);
+  const latest = state.burns.filter((record) => record.state === 'complete').at(-1);
   const latestAsset = state.assets.find((item) => item.assetId === latest?.params.assetId);
 
   return <View style={styles.group}>
-    <Text style={styles.heading}>Burn for an EVM or Tron payout</Text>
-    <Text style={styles.text}>Burn BFA tokens here, then use the saved proof on the bridge website to request your payout.</Text>
+    <Text style={styles.heading}>Burn for a bridge payout</Text>
+    <Text style={styles.text}>Burn BFA tokens here, then export the proof and payout details together for the bridge website.</Text>
     {!state.burnAvailable && <Text style={styles.warning}>Burn requires a compatible native build and Ethereum RPC configuration.</Text>}
     {!assets.length && <Text style={styles.text}>No BFA assets in this wallet. Receive a bridge asset first.</Text>}
     {pending && <Text accessibilityRole="alert" style={styles.warning}>
@@ -58,13 +58,13 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
       </View>
       <Text style={styles.label}>Payout chain</Text>
       <TextInput accessibilityLabel="Payout chain" value={payoutChainId} onChangeText={setPayoutChainId}
-        placeholder="e.g. 1 or tron:728126428" placeholderTextColor={C.textTertiary}
+        placeholder="1, 42161, 137, 9745 or tron:728126428" placeholderTextColor={C.textTertiary}
         autoCapitalize="none" autoCorrect={false}
         editable={!unavailable} style={styles.input} />
-      <Text style={styles.hint}>Ethereum: 1 · Arbitrum One: 42161 · Tron: tron:728126428 (Shasta: tron:2494104990, Nile: tron:3448148188)</Text>
+      <Text style={styles.hint}>Ethereum: 1 · Arbitrum: 42161 · Polygon: 137 · Plasma: 9745 · Tron: tron:728126428</Text>
       <Text style={styles.label}>Payout address</Text>
       <TextInput accessibilityLabel="Payout address" value={payoutAddress} onChangeText={setPayoutAddress}
-        placeholder="0x… or T…" placeholderTextColor={C.textTertiary} autoCapitalize="none" autoCorrect={false}
+        placeholder="0x… or Tron T…" placeholderTextColor={C.textTertiary} autoCapitalize="none" autoCorrect={false}
         editable={!unavailable} style={styles.input} />
       <Text style={styles.hint}>The wallet uses 2 sat/vB and requires 3 confirmations. BTC is needed for the network fee. You will review all details before burning.</Text>
       {!!amount.trim() && !!payoutAddress.trim() && !!validation && <Text accessibilityRole="alert" style={styles.warning}>{validation}</Text>}
@@ -96,7 +96,11 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
       {!!copied && <Text accessibilityLiveRegion="polite" style={styles.hint}>{copied}</Text>}
       <Text style={styles.text}>Payout: {payoutChainLabel(latest.metadata.payout.chainId)}</Text>
       <Text selectable style={styles.mono}>{latest.metadata.payout.address}</Text>
-      <Text style={styles.hint}>To request the payout, connect this wallet on the bridge website and choose Existing burn → From wallet. Select this transaction if several burns are listed.</Text>
+      <Pressable accessibilityRole="button" disabled={busy} style={styles.button}
+        onPress={() => { void demoWallet.exportBurnFiles(latest.id); }}>
+        <Text style={styles.buttonText}>Export .utexoburn file</Text>
+      </Pressable>
+      <Text style={styles.hint}>The .utexoburn file includes the proof and payout details. Choose Existing burn → Upload on the bridge to recover this burn. Exporting does not burn again.</Text>
     </View>}
   </View>;
 }

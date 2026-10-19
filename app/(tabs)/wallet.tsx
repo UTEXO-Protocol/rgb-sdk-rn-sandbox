@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { nativeApplicationVersion } from 'expo-application';
 import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { buildDemoWalletConfig, DEMO_WALLET_NETWORKS } from '@/utils/env';
@@ -126,9 +127,10 @@ export default function WalletScreen() {
           enabled={state.ready && !walletBusy}
           onRefresh={() => { void demoWallet.refresh(); }} />}
       >
-        <Text style={styles.title}>Wallet</Text>
+        <Text style={styles.title}>BFA Local Test</Text>
+        <Text style={styles.text}>Version {nativeApplicationVersion ?? '1.0.0-bfa.local.3'}</Text>
         <Text style={styles.subtitle}>
-          Your RGB assets, invoices and connected websites.
+          On-chain RGB wallet. Cloud backup and Lightning are unavailable.
         </Text>
         <View style={styles.card}>
           <Text style={styles.heading}>Network</Text>
