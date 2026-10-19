@@ -10,7 +10,7 @@ const uri = `wc:${'a'.repeat(64)}@2?relay-protocol=irn&symKey=${'b'.repeat(64)}`
 test('scanner and pasted/deep-linked connections resolve to the same URI', () => {
   assert.equal(parseWalletConnectUri(` ${uri} `), uri);
   assert.equal(
-    parseWalletConnectUri(`myapp://wallet?uri=${encodeURIComponent(uri)}`),
+    parseWalletConnectUri(`utexobfalocal://wallet?uri=${encodeURIComponent(uri)}`),
     uri
   );
 });

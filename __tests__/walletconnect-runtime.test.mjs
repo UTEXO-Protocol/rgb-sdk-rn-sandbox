@@ -1,4 +1,4 @@
-import { BurnOperations, normalizeBurnRecord } from '@utexo/rgb-sdk-rn';
+import { BurnOperations, normalizeBurnRecord, localBfaBurnDestination, burnDestinationHash, createBurnPackage } from '@utexo/rgb-sdk-rn';
 import { encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,7 +53,7 @@ function fixture(init, modules = {}) {
     process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: 'a'.repeat(32) } },
     setTimeout, clearTimeout, Error,
     require: (name) => {
-      if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
+      if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, localBfaBurnDestination, burnDestinationHash, createBurnPackage, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
       if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], encodeEvmBurnRecipient, encodeTronBurnRecipient };
       if (name === '@walletconnect/core') return { Core: class { constructor() { stats.cores++; } } };
@@ -126,7 +126,7 @@ test('a failed WalletKit initialization retries with the same Core', async () =>
 
 function nativeWalletFixture(initError, options = {}) {
   const calls = [];
-  const native = { refreshes: 0, invoices: [], requests: [], responses: [], nodes: [], keys: [], storageReads: [], lifecycle: [], burns: [] };
+  const native = { refreshes: 0, invoices: [], requests: [], responses: [], nodes: [], keys: [], storageReads: [], lifecycle: [], burns: [], exports: [] };
   const storage = new Map(options.savedNetwork ? [['utexo-demo-wallet-network-v1', options.savedNetwork]] : []);
   const btc = {
     vanilla: { spendable: 92000, settled: 92000, future: 92000 },
@@ -163,6 +163,16 @@ function nativeWalletFixture(initError, options = {}) {
     'expo-file-system/legacy': {
       documentDirectory: 'file:///mock-wallet/',
       makeDirectoryAsync: async () => {},
+      EncodingType: { Base64: 'base64' },
+      StorageAccessFramework: {
+        requestDirectoryPermissionsAsync: async () => ({ granted: options.exportGranted !== false, directoryUri: 'content://test-folder' }),
+        createFileAsync: async (directory, name, mime) => {
+          native.exports.push({ directory, name, mime }); return 'content://test-folder/' + name;
+        },
+      },
+      writeAsStringAsync: async (uri, data, encoding) => {
+        native.exports.at(-1).data = data; native.exports.at(-1).encoding = encoding;
+      },
     },
     '@react-native-async-storage/async-storage': {
       getItem: async (key) => {
@@ -214,6 +224,7 @@ function nativeWalletFixture(initError, options = {}) {
           await options.burn?.(params);
           return { txid: 'ab'.repeat(32), batchTransferIdx: 3 };
         }
+        async getConsignment() { return Buffer.from(options.proof ?? 'RGB\0TFR\x01test-rgb-proof').toString('base64'); }
         async getBtcBalance() { return btc; }
         async listAssets() {
           if (options.readError?.(this.network)) throw new Error('Indexer unavailable');
@@ -356,11 +367,12 @@ test('BFA receive preserves the asset constraint and never silently removes a re
   const wallet = load();
   await wallet.start();
   await wallet.generateInvoice({ amount: '5', assetId: 'rgb:test', durationMinutes: '60' });
-  assert.match(wallet.snapshot().error, /BFA build requires an open amount/);
-  assert.equal(native.invoices.length, 0);
-  await wallet.generateInvoice({ amount: '', assetId: 'rgb:test', durationMinutes: '60' });
+  assert.equal(wallet.snapshot().error, '');
   assert.equal(native.invoices[0].assetId, 'rgb:test');
-  assert.equal(native.invoices[0].amount, undefined);
+  assert.equal(native.invoices[0].amount, 5);
+  await wallet.generateInvoice({ amount: '', assetId: 'rgb:test', durationMinutes: '60' });
+  assert.equal(native.invoices[1].assetId, 'rgb:test');
+  assert.equal(native.invoices[1].amount, undefined);
 });
 
 test('a generated invoice is retained if the follow-up balance read fails', async () => {
@@ -432,7 +444,7 @@ test('Wallet tab defaults to Utexo signet even when a mock faucet and network ov
   const signet = exports.buildDemoWalletConfig();
   assert.equal(signet.network, 'utexo');
   assert.equal(signet.unlockParams.indexerUrl, 'https://esplora-api.utexo.com');
-  assert.equal(signet.unlockParams.proxyEndpoint, 'rpcs://rgb-proxy.utexo.com/json-rpc');
+  assert.equal(signet.unlockParams.proxyEndpoint, 'rpcs://rgb-proxy.dev.utexo.com/json-rpc');
   const local = exports.buildDemoWalletConfig('regtest');
   assert.equal(local.network, 'regtest');
   assert.equal(local.unlockParams.indexerUrl, '192.168.1.10:51211');
@@ -660,7 +672,8 @@ test('local burn converts decimal amounts exactly and persists without a website
   assert.equal(result.state, 'complete');
   assert.equal(native.burns.length, 1);
   assert.equal(native.burns[0].amount, '1250001');
-  assert.equal(native.burns[0].burnRecipient, '0'.repeat(24) + '12'.repeat(20));
+  assert.equal(native.burns[0].burnRecipient, burnDestinationHash(result.metadata.burnDestination));
+  assert.equal(result.metadata.burnDestination.dstEid, 30101);
   assert.equal(result.metadata.origin, 'local:wallet');
   assert.equal(result.metadata.network, 'utexo');
   assert.equal(result.metadata.payout.chainId, 'eip155:1');
@@ -672,21 +685,13 @@ test('local burn converts decimal amounts exactly and persists without a website
   assert.equal(persisted[0].state, 'complete');
 });
 
-test('local burn to Tron keeps the Base58Check address and encodes the account bytes', async (t) => {
+test('local BFA build refuses unconfigured payout before approval or native burn', async () => {
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
-  const wallet = load();
-  await wallet.start();
-  t.after(() => wallet.snapshot().prompt?.resolve(false));
-  const tronAddress = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-  const task = wallet.burnAsset({ ...localBurnForm, payoutChainId: 'tron:728126428', payoutAddress: tronAddress });
-  const prompt = await waitForBurnPrompt(wallet);
-  assert.match(prompt.details, /Payout network: Tron \(tron:728126428\)/);
-  assert.ok(prompt.details.includes(tronAddress));
-  prompt.resolve(true);
-  const result = await task;
-  assert.equal(result.state, 'complete');
-  assert.equal(native.burns[0].burnRecipient, encodeTronBurnRecipient(tronAddress));
-  assert.deepEqual(result.metadata.payout, { chainId: 'tron:728126428', address: tronAddress });
+  const wallet = load(); await wallet.start();
+  await wallet.burnAsset({ ...localBurnForm, payoutChainId: 'tron:3448148188', payoutAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' });
+  assert.equal(wallet.snapshot().prompt, null);
+  assert.equal(native.burns.length, 0);
+  assert.match(wallet.snapshot().error, /supports payouts to Arbitrum One, Ethereum, Polygon, Plasma and Tron mainnet/);
 });
 
 test('rejecting a local burn neither invokes native burn nor creates a journal entry', async () => {
@@ -826,3 +831,37 @@ test('burn amount and Max helpers preserve decimals and reject unsafe numeric ba
   assert.throws(() => assertBurnBalance('1', Number.MAX_SAFE_INTEGER + 1), /unsupported available balance/);
   assert.throws(() => assertBurnBalance('1', undefined), /unsupported available balance/);
 });
+
+test('export saves one CLI-compatible .utexoburn file without repeating burn', async () => {
+  const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
+  const wallet = load(); await wallet.start();
+  const task = wallet.burnAsset(localBurnForm);
+  (await waitForBurnPrompt(wallet)).resolve(true);
+  const record = await task;
+  await wallet.exportBurnFiles(record.id);
+  assert.equal(native.burns.length, 1);
+  assert.equal(native.exports.length, 1);
+  assert.match(native.exports[0].name, /\.utexoburn$/);
+  assert.equal(native.exports[0].mime, 'application/json');
+  const envelope = JSON.parse(native.exports[0].data);
+  assert.equal(envelope.format, 'utexo-burn');
+  assert.equal(envelope.version, 1);
+  assert.deepEqual(envelope.burnDestination, record.metadata.burnDestination);
+  assert.equal(Buffer.from(envelope.consignment.data, 'base64').toString(), 'RGB\0TFR\x01test-rgb-proof');
+  assert.equal(envelope.consignment.byteLength, Buffer.from(envelope.consignment.data, 'base64').length);
+  assert.equal(wallet.snapshot().error, '');
+});
+
+for (const options of [{ exportGranted: false }, { proof: 'not a transfer' }]) {
+  test('export cancellation or invalid proof creates no files and never repeats burn: ' + JSON.stringify(options), async () => {
+    const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true, ...options });
+    const wallet = load(); await wallet.start();
+    const task = wallet.burnAsset(localBurnForm);
+    (await waitForBurnPrompt(wallet)).resolve(true);
+    const record = await task;
+    await wallet.exportBurnFiles(record.id);
+    assert.equal(native.burns.length, 1);
+    assert.equal(native.exports.length, 0);
+    assert.equal(wallet.snapshot().burns.at(-1).state, 'complete');
+  });
+}

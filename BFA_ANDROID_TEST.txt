@@ -1,0 +1,36 @@
+BFA Android draft sandbox
+
+Companion SDK: https://github.com/UTEXO-Protocol/rgb-sdk-rn/pull/67
+Companion native build: https://github.com/UTEXO-Protocol/rgb-lightning-node/pull/211
+Frontend V1 integration: https://github.com/UTEXO-Protocol/utexo-bridge-fe/pull/108
+
+The package manifest and lockfiles pin the companion SDK commit. No local
+archive paths or binary artifacts are committed. The dev RGB proxy requires
+authorized company VPN access. Copy .env.example to a private .env and provide
+your WalletConnect project ID. Do not add credentials or environment files.
+
+For a source build, first follow BFA_ANDROID_BUILD.txt in the SDK checkout:
+build its native artifact, stage it, build the SDK and pack it locally. In
+this sandbox, install dependencies and override only the installed SDK with
+that verified local package for the Android build:
+
+  npm ci --ignore-scripts
+  npm install --ignore-scripts --no-save --package-lock=false /path/to/sdk.tgz
+  npx expo prebuild --platform android
+  cd android
+  ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+
+The local package override must not be committed. The manifest retains the
+pinned SDK source dependency for review. The native artifact is not published
+by these commands; production artifact distribution remains draft work.
+
+Application identity: com.utexo.sandbox.bfalocal, scheme utexobfalocal.
+This keeps the test wallet separate from existing apps. Update the same
+package/signature in place; never uninstall or clear data to repair a burn.
+Wallet and journal storage keys stay unchanged across local BFA updates.
+
+Supports configured Arbitrum, Ethereum, Polygon, Plasma and Tron mainnet V1
+payouts. Export a completed burn as one .utexoburn file for Existing burn
+recovery. Export and recovery must not trigger another native burn.
+VSS and Lightning runtime are unavailable in this native test build.
+Device/live burn/payout validation is still pending.

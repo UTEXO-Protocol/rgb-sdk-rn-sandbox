@@ -34,12 +34,11 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
   const [amount, setAmount] = useState('');
   const [assetId, setAssetId] = useState('');
   const [burnAssetId, setBurnAssetId] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState('60');
+  const [durationMinutes, setDurationMinutes] = useState('1440');
   const [feedback, setFeedback] = useState('');
   const [now, setNow] = useState(Date.now());
   const disabled = state.busy || !!state.prompt || !!state.activeRequest;
   const invoice = state.invoice;
-  const selectedBfa = state.assets.find((asset) => asset.assetId === assetId)?.schema === 'BFA';
   const expired = !!invoice?.expirationTimestamp && invoice.expirationTimestamp * 1000 <= now;
 
   useEffect(() => {
@@ -114,10 +113,7 @@ export function WalletOverview({ state }: { state: DemoWalletState }) {
       <Text style={styles.label}>Amount in base units (optional)</Text>
       <TextInput accessibilityLabel="Receive amount in base units" value={amount} onChangeText={setAmount}
         placeholder="Any amount" placeholderTextColor={C.textTertiary} keyboardType="number-pad"
-        editable={!disabled && !selectedBfa} style={[styles.input, selectedBfa && styles.disabled]} />
-      {selectedBfa && <Text style={styles.text}>
-        This BFA currently supports invoices with an open amount. To request a fixed amount, choose Any / new asset.
-      </Text>}
+        editable={!disabled} style={styles.input} />
       <Text style={styles.label}>Invoice expiry in minutes</Text>
       <TextInput accessibilityLabel="Invoice expiry in minutes" value={durationMinutes} onChangeText={setDurationMinutes}
         keyboardType="number-pad" editable={!disabled} style={styles.input} />

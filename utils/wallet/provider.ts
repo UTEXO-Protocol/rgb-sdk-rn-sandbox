@@ -33,6 +33,7 @@ export function createDemoRgbProvider(
     getInfo: wrap('getInfo', () => provider.getInfo()),
     getAddress: wrap('getAddress', () => provider.getAddress()),
     blindReceive: wrap('blindReceive', provider.blindReceive.bind(provider)),
+    witnessReceive: wrap('witnessReceive', provider.witnessReceive.bind(provider)),
     listAssets: wrap('listAssets', () => provider.listAssets()),
     getAssetBalance: wrap('getAssetBalance', provider.getAssetBalance.bind(provider)),
     listTransfers: wrap('listTransfers', provider.listTransfers.bind(provider)),
