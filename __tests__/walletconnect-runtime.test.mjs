@@ -40,8 +40,8 @@ test('app entry installs crypto before Router can evaluate wallet imports', () =
   assert.equal(typeof capturedCrypto?.getRandomValues, 'function');
 });
 
-function fixture(init, modules = {}) {
-  const stats = { cores: 0, clients: 0, listeners: 0, seenCores: [], transports: [], disposedTransports: 0 };
+function fixture(init, modules = {}, env = {}) {
+  const stats = { cores: 0, clients: 0, listeners: 0, seenCores: [], transports: [], disposedTransports: 0, coreOptions: [] };
   const client = {
     on: () => { stats.listeners++; },
     sessions: {},
@@ -50,13 +50,13 @@ function fixture(init, modules = {}) {
     core: { expirer: { on: () => { stats.listeners++; } } },
   };
   const context = vm.createContext({
-    process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: 'a'.repeat(32) } },
+    process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: 'a'.repeat(32), ...env } },
     setTimeout, clearTimeout, Error,
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
       if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], encodeEvmBurnRecipient, encodeTronBurnRecipient };
-      if (name === '@walletconnect/core') return { Core: class { constructor() { stats.cores++; } } };
+      if (name === '@walletconnect/core') return { Core: class { constructor(options) { stats.cores++; stats.coreOptions.push(options); } } };
       if (name === '@reown/walletkit') return { WalletKit: { init: (options) => {
         stats.clients++;
         stats.seenCores.push(options.core);
@@ -89,9 +89,10 @@ function fixture(init, modules = {}) {
     vm.runInContext(`(function(exports, require) { ${source}\n})`, context)(exports, require);
     return exports;
   };
-  const load = () => loadFile(fileURLToPath(new URL('../utils/wallet/service.ts', import.meta.url)), true).demoWallet;
+  const load = (protocol = 'RGB_LN') => loadFile(fileURLToPath(new URL('../utils/wallet/service.ts', import.meta.url)), true)[protocol === 'RGB_L1' ? 'rgbLibWallet' : 'demoWallet'];
   const loadBurn = () => loadFile(fileURLToPath(new URL('../utils/wallet/burn.ts', import.meta.url)));
-  return { stats, load, client, loadBurn };
+  const loadRgbConfig = () => loadFile(fileURLToPath(new URL('../utils/wallet/rgb-lib-node.ts', import.meta.url))).buildRgbLibConfig;
+  return { stats, load, client, loadBurn, loadRgbConfig };
 }
 
 test('concurrent callers and module refresh share one initialized Core/client/listener set', async () => {
@@ -126,8 +127,11 @@ test('a failed WalletKit initialization retries with the same Core', async () =>
 
 function nativeWalletFixture(initError, options = {}) {
   const calls = [];
-  const native = { refreshes: 0, invoices: [], requests: [], responses: [], nodes: [], keys: [], storageReads: [], lifecycle: [], burns: [] };
+  const native = { refreshes: 0, invoices: [], requests: [], responses: [], nodes: [], keys: [], storageReads: [], lifecycle: [], burns: [], mnemonics: [], deletedDirectories: [], deletedKeys: [] };
   const storage = new Map(options.savedNetwork ? [['utexo-demo-wallet-network-v1', options.savedNetwork]] : []);
+  const savedKeys = options.savedKeys ?? new Map(options.newRgbKeys ? [] : ['utexo', 'regtest'].map(network =>
+    [`utexo-demo-wallet-v1-RGB_L1-${network}-default-taproot`, 'saved-rgb-mnemonic']));
+  let generatedKeys = 0;
   const btc = {
     vanilla: { spendable: 92000, settled: 92000, future: 92000 },
     colored: { spendable: 4000, settled: 4000, future: 4000 },
@@ -156,13 +160,30 @@ function nativeWalletFixture(initError, options = {}) {
     'expo-secure-store': {
       getItemAsync: async (key) => {
         native.keys.push(key);
+        if (key.includes('RGB_L1')) return savedKeys.get(key) ?? null;
         return JSON.stringify({ mnemonic: 'saved-test-mnemonic', password: 'saved-test-password' });
       },
-      setItemAsync: async () => { calls.push('replaceCredentials'); },
+      setItemAsync: async (key, value) => {
+        await options.writeKey?.(key);
+        calls.push(key.endsWith('-deleting') ? 'markDeleting' : 'replaceCredentials');
+        savedKeys.set(key, value);
+      },
+      deleteItemAsync: async (key) => {
+        await options.deleteKey?.(key);
+        calls.push(key.endsWith('-deleting') ? 'clearDeleting' : 'deleteCredentials');
+        native.deletedKeys.push(key);
+        savedKeys.delete(key);
+      },
     },
     'expo-file-system/legacy': {
       documentDirectory: 'file:///mock-wallet/',
       makeDirectoryAsync: async () => {},
+      deleteAsync: async (directory, config) => {
+        assert.equal(config.idempotent, true);
+        await options.deleteFiles?.();
+        calls.push('deleteFiles');
+        native.deletedDirectories.push(directory);
+      },
     },
     '@react-native-async-storage/async-storage': {
       getItem: async (key) => {
@@ -176,7 +197,11 @@ function nativeWalletFixture(initError, options = {}) {
       },
     },
     '@utexo/rgb-sdk-rn': {
-      createWallet: async () => { throw new Error('Must reuse saved keys'); },
+      createWallet: async () => {
+        if (options.newRgbKeys || options.regenerateRgbKeys) return { mnemonic: ++generatedKeys === 1 ? 'new-rgb-mnemonic' : `new-rgb-mnemonic-${generatedKeys}` };
+        throw new Error('Must reuse saved keys');
+      },
+      CallbackRgbLibKeyProvider: class { constructor(read) { this.getMnemonic = read; } },
       PasswordRLNSigner: class {
         constructor(password, mnemonic) {
           assert.equal(password, 'saved-test-password');
@@ -184,13 +209,25 @@ function nativeWalletFixture(initError, options = {}) {
         }
       },
       UTEXOWallet: class {
-        constructor(params) { this.network = params.network; native.nodes.push(params); }
+        constructor(input) {
+          this.protocol = input.protocol ?? 'RGB_LN';
+          const params = input.params ?? input;
+          this.network = params.network; this.keys = input.keys;
+          native.nodes.push(params);
+        }
         async init() {
           calls.push('init');
+          if (this.protocol === 'RGB_L1') {
+            const mnemonic = await this.keys.getMnemonic();
+            assert.equal(mnemonic, savedKeys.get(`utexo-demo-wallet-v1-RGB_L1-${this.network}-default-taproot`));
+            native.mnemonics.push(mnemonic);
+            await options.rgbInit?.();
+          }
           if (initError) throw new Error(initError);
         }
         async unlock(params) {
-          assert.equal(params, configs[this.network].unlockParams);
+          if (this.protocol === 'RGB_LN') assert.equal(params, configs[this.network].unlockParams);
+          else assert.equal(params.indexerUrl, `tcp://${this.network}.test:50001`);
           calls.push('unlock'); native.lifecycle.push(`unlock:${this.network}`);
           await options.unlock?.(this.network);
         }
@@ -199,13 +236,15 @@ function nativeWalletFixture(initError, options = {}) {
           calls.push('shutdown'); native.lifecycle.push(`shutdown:${this.network}`);
         }
         async reinit(params) {
-          assert.equal(params, configs[this.network].unlockParams);
+          if (this.protocol === 'RGB_LN') assert.equal(params, configs[this.network].unlockParams);
+          else assert.equal(params.indexerUrl, `tcp://${this.network}.test:50001`);
           calls.push('reinit'); native.lifecycle.push(`reinit:${this.network}`);
           await options.unlock?.(this.network);
         }
         async getAddress() { return this.network === 'utexo' ? 'saved-btc-address' : 'saved-regtest-address'; }
-        async getNodeInfo() { return { pubkey: 'saved-node-pubkey' }; }
-        async getBfaCapabilities() { return { burn: !!options.burnAvailable, consignment: !!options.burnAvailable }; }
+        async getNodeInfo() { assert.equal(this.protocol, 'RGB_LN'); return { pubkey: 'saved-node-pubkey' }; }
+        async getWalletIdentity() { return { id: 'saved-node-pubkey', network: this.network, protocol: this.protocol }; }
+        async getBfaCapabilities() { await options.capabilities?.(); return { burn: !!options.burnAvailable, consignment: !!options.burnAvailable }; }
         async getAssetBalance() { return { spendable: options.available?.() ?? 5 }; }
         async burn(params) {
           const journal = JSON.parse(storage.get(`utexo-burn-journal-v1:rgb:${this.network}:saved-node-pubkey`));
@@ -222,27 +261,35 @@ function nativeWalletFixture(initError, options = {}) {
             nia: [{ assetId: 'rgb:nia', name: 'NIA test', precision: 0, balance: { spendable: 2, settled: 2, future: 2 } }], uda: null };
         }
         async listTransfers(assetId) {
+          if (this.protocol === 'RGB_L1' && assetId === undefined) return [{ idx: 1, createdAt: 100 }, { idx: 2, createdAt: 200 }, { idx: 3, createdAt: 300, kind: 'ReceiveBlind', status: 'WaitingCounterparty' }];
           assert.ok(['rgb:test', 'rgb:nia'].includes(assetId), 'RLN requires a transfer filter');
           if (assetId === 'rgb:nia') return [];
           return [{ idx: 1, createdAt: 100 }, { idx: 2, createdAt: 200 }];
         }
-        async refreshWallet() { native.refreshes++; await options.refresh?.(); }
+        async refreshTransfers() { native.refreshes++; return (await options.refresh?.()) ?? { transfers: {} }; }
+        async refreshWallet() { await this.refreshTransfers(); }
         async blindReceive(params) {
           native.invoices.push(params);
           return { invoice: 'rgb:test-invoice', expirationTimestamp: 1234567890 };
         }
-        async dispose() { calls.push('dispose'); }
+        async dispose() { calls.push('dispose'); await options.dispose?.(); }
       },
     },
   };
-  const result = fixture(undefined, modules);
+  const result = fixture(undefined, modules, {
+    EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL: 'tcp://utexo.test:50001',
+    EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT: 'rpc://utexo.test:3000/json-rpc',
+    EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL: 'tcp://regtest.test:50001',
+    EXPO_PUBLIC_RGB_LIB_REGTEST_PROXY_ENDPOINT: 'rpc://regtest.test:3000/json-rpc',
+    ...options.env,
+  });
   const session = {
     topic: 'test-topic', expiry: Math.floor(Date.now() / 1000) + 3600,
     peer: { metadata: { url: 'https://test.example' } },
     namespaces: { rgb: { methods: ['rgb_getAssetBalance', 'rgb_burnAsset'] } },
   };
   result.client.sessions = { [session.topic]: session };
-  return { ...result, calls, native, btc, storage };
+  return { ...result, calls, native, btc, storage, savedKeys };
 }
 
 test('Open wallet unlocks the saved node after RLN reports it is already initialized', async () => {
@@ -299,7 +346,7 @@ test('refresh is single-flight and blocks invoice allocation until native refres
   await wallet.start();
   const refresh = wallet.refresh();
   await wallet.refresh();
-  await wallet.generateInvoice({ amount: '5', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180' });
   assert.equal(wallet.snapshot().busy, true);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(native.refreshes, 1);
@@ -327,38 +374,77 @@ test('failed refresh preserves the last complete balance snapshot and remains re
   assert.equal(wallet.snapshot().error, '');
 });
 
+test('refresh surfaces per-batch failures while still publishing fresh balances and can retry', async () => {
+  for (const protocol of ['RGB_LN', 'RGB_L1']) {
+    let broken = true, available = 5;
+    const { load, native } = nativeWalletFixture(undefined, {
+      available: () => available,
+      refresh: () => ({ transfers: broken ? {
+        42: { failure: { name: 'RGB_LIB_Network', message: 'Mint validation RPC unavailable' } },
+        43: { updatedStatus: 'Settled' },
+      } : {} }),
+    });
+    const wallet = load(protocol);
+    await wallet.start();
+    available = 7;
+    await wallet.refresh();
+    assert.match(wallet.snapshot().error, /Batch 42: RGB_LIB_Network: Mint validation RPC unavailable/);
+    assert.match(wallet.snapshot().message, /some transfers could not refresh/);
+    assert.equal(wallet.snapshot().assets[0].balance.spendable, 7, 'Other transfers still update');
+    assert.equal(wallet.snapshot().refreshing, false);
+    assert.equal(wallet.snapshot().busy, false);
+    broken = false;
+    await wallet.refresh();
+    assert.equal(wallet.snapshot().error, '');
+    assert.equal(native.refreshes, 2, 'One native refresh per action');
+  }
+});
+
+test('RGB Lib refresh explains that unknown-asset receives are still pending', async () => {
+  const { load } = nativeWalletFixture();
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  await wallet.refresh();
+  assert.equal(wallet.snapshot().error, '');
+  assert.match(wallet.snapshot().message, /1 transfer still pending; check Activity/);
+  assert.equal(wallet.snapshot().transfers[0].status, 'WaitingCounterparty');
+});
+
 test('local invoices validate amount, asset and expiry before allocating a receive UTXO', async () => {
   const { load, native } = nativeWalletFixture();
   const wallet = load();
   await wallet.start();
   for (const amount of ['-1', '0', '1.5', '1e3', '9007199254740992']) {
-    await wallet.generateInvoice({ amount, durationMinutes: '60' });
+    await wallet.generateInvoice({ amount, durationMinutes: '180' });
     assert.match(wallet.snapshot().error, /positive whole amount/);
   }
-  await wallet.generateInvoice({ amount: '5', assetId: 'rgb:unknown', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '5', assetId: 'rgb:unknown', durationMinutes: '180' });
   assert.match(wallet.snapshot().error, /Select an asset/);
-  await wallet.generateInvoice({ amount: '5', durationMinutes: '43201' });
-  assert.match(wallet.snapshot().error, /expiry/);
+  for (const durationMinutes of ['0', '60', '179', '180.5', '43201']) {
+    await wallet.generateInvoice({ amount: '5', durationMinutes });
+    assert.match(wallet.snapshot().error, /expiry must be between 180 and 43,200 minutes/);
+  }
   assert.equal(native.invoices.length, 0);
-  await wallet.generateInvoice({ amount: '5', assetId: 'rgb:nia', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '5', assetId: 'rgb:nia', durationMinutes: '180' });
   assert.deepEqual(JSON.parse(JSON.stringify(native.invoices[0])), {
-    amount: 5, assetId: 'rgb:nia', durationSeconds: 3600, minConfirmations: 3,
+    amount: 5, assetId: 'rgb:nia', durationSeconds: 10800, minConfirmations: 3,
   });
   assert.equal(wallet.snapshot().invoice.amount, 5);
   assert.equal(wallet.snapshot().invoice.source, 'Created on this device');
-  await wallet.generateInvoice({ amount: '', durationMinutes: '15' });
+  await wallet.generateInvoice({ amount: '', durationMinutes: '360' });
   assert.equal(native.invoices[1].amount, undefined);
   assert.equal(native.invoices[1].assetId, undefined);
+  assert.equal(native.invoices[1].durationSeconds, 21600);
 });
 
 test('BFA receive preserves the asset constraint and never silently removes a requested amount', async () => {
   const { load, native } = nativeWalletFixture();
   const wallet = load();
   await wallet.start();
-  await wallet.generateInvoice({ amount: '5', assetId: 'rgb:test', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '5', assetId: 'rgb:test', durationMinutes: '180' });
   assert.match(wallet.snapshot().error, /BFA build requires an open amount/);
   assert.equal(native.invoices.length, 0);
-  await wallet.generateInvoice({ amount: '', assetId: 'rgb:test', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '', assetId: 'rgb:test', durationMinutes: '180' });
   assert.equal(native.invoices[0].assetId, 'rgb:test');
   assert.equal(native.invoices[0].amount, undefined);
 });
@@ -369,7 +455,7 @@ test('a generated invoice is retained if the follow-up balance read fails', asyn
   const wallet = load();
   await wallet.start();
   broken = true;
-  await wallet.generateInvoice({ amount: '5', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180' });
   assert.equal(native.invoices.length, 1);
   assert.equal(wallet.snapshot().invoice.invoice, 'rgb:test-invoice');
   assert.match(wallet.snapshot().error, /Invoice created; balances could not refresh/);
@@ -484,7 +570,7 @@ test('switching clears old data/sessions, separates storage, and restarts saved 
   const { load, native, stats, client, storage } = nativeWalletFixture();
   const wallet = load();
   await wallet.start();
-  await wallet.generateInvoice({ amount: '5', durationMinutes: '60' });
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180' });
   const oldProvider = wallet.provider(context());
   await wallet.selectNetwork('regtest');
   assert.equal(wallet.snapshot().error, '');
@@ -825,4 +911,330 @@ test('burn amount and Max helpers preserve decimals and reject unsafe numeric ba
     assert.throws(() => burnBaseUnits(value, 6));
   assert.throws(() => assertBurnBalance('1', Number.MAX_SAFE_INTEGER + 1), /unsupported available balance/);
   assert.throws(() => assertBurnBalance('1', undefined), /unsupported available balance/);
+});
+
+test('RLN and RGB Lib coexist with separate keys, directories, preferences, journals and sessions', async () => {
+  const { load, native, stats, storage } = nativeWalletFixture(undefined, { burnAvailable: true });
+  const rln = load();
+  const rgb = load('RGB_L1');
+  assert.notEqual(rln, rgb);
+  await rln.start();
+  await rgb.start();
+  assert.equal(rln.snapshot().ready, true, rln.snapshot().error);
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(rln.snapshot().protocol, 'RGB_LN');
+  assert.equal(rgb.snapshot().protocol, 'RGB_L1');
+  assert.equal(rln.snapshot().burnAvailable, true);
+  assert.equal(rgb.snapshot().burnAvailable, false, 'Native burn does not authorize bridge payouts');
+  assert.equal(native.nodes[0].storageDirPath, '/mock-wallet/wallet-connect-v1/utexo');
+  assert.equal(native.nodes[1].storageDirPath, '/mock-wallet/wallet-connect-v1/RGB_L1/utexo/default/taproot');
+  assert.ok(native.keys.includes('utexo-demo-wallet-v1-utexo'));
+  assert.ok(native.keys.includes('utexo-demo-wallet-v1-RGB_L1-utexo-default-taproot'));
+  assert.ok(native.storageReads.includes('utexo-burn-journal-v1:rgb:utexo:saved-node-pubkey'));
+  assert.ok(native.storageReads.includes('utexo-burn-journal-v1:rgb:utexo:RGB-L1-saved-node-pubkey'));
+  assert.deepEqual(stats.coreOptions.map((config) => config.customStoragePrefix), [
+    'utexo-demo-wallet-webrgb-v2', 'utexo-demo-wallet-webrgb-v2-RGB_L1',
+  ]);
+  assert.equal(stats.transports[0].account, 'saved-node-pubkey');
+  assert.equal(stats.transports[1].account, 'RGB-L1-saved-node-pubkey');
+  assert.ok(!stats.transports[1].methods.includes('burnAsset'));
+  const original = rln.snapshot();
+  await rgb.selectNetwork('regtest');
+  assert.equal(rgb.snapshot().network, 'regtest');
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(rln.snapshot(), original, 'Switching RGB Lib must not modify RLN');
+  assert.equal(storage.get('utexo-demo-wallet-network-v1-RGB_L1'), 'regtest');
+  assert.equal(storage.has('utexo-demo-wallet-network-v1'), false);
+  await rgb.selectNetwork('utexo');
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(native.nodes.length, 3, 'Returning reuses the stopped RGB Lib facade');
+});
+
+test('RGB Lib keeps unknown-asset pending receives and uses its own invoice actions', async () => {
+  const { load, native } = nativeWalletFixture();
+  const rln = load();
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(rgb.snapshot().transfers.length, 3);
+  assert.equal(rgb.snapshot().transfers[0].assetId, '');
+  assert.equal(rgb.snapshot().transfers[1].assetId, 'rgb:test');
+  await rgb.generateInvoice({ amount: '5', durationMinutes: '180' });
+  assert.equal(native.invoices.length, 1);
+  assert.equal(rgb.snapshot().invoice.amount, 5);
+  assert.equal(rln.snapshot().invoice, null);
+  await rgb.burnAsset({ assetId: 'rgb:test', amount: '1', payoutChainId: '1', payoutAddress: '0x' + '12'.repeat(20) });
+  assert.match(rgb.snapshot().error, /Burn is unavailable/);
+  assert.equal(native.burns.length, 0);
+  assert.equal(rgb.snapshot().prompt, null);
+});
+
+test('RGB Lib saves keys before init and retries a missing native backend without affecting Wallet', async () => {
+  let missing = true;
+  const { load, native, calls } = nativeWalletFixture(undefined, {
+    newRgbKeys: true,
+    rgbInit: () => { if (missing) throw new Error('NATIVE_BACKEND_UNAVAILABLE'); },
+  });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, false);
+  assert.equal(rgb.snapshot().error, 'NATIVE_BACKEND_UNAVAILABLE');
+  assert.ok(calls.indexOf('replaceCredentials') < calls.indexOf('init'));
+  const rln = load();
+  await rln.start();
+  assert.equal(rln.snapshot().ready, true, rln.snapshot().error);
+  missing = false;
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(calls.filter((call) => call === 'replaceCredentials').length, 1);
+  assert.equal(native.nodes[0].storageDirPath, native.nodes[2].storageDirPath);
+});
+
+test('RGB Lib retains a failed cleanup handle and closes it before opening another native wallet', async () => {
+  let failOpen = true, failClose = true;
+  const { load, native } = nativeWalletFixture(undefined, {
+    rgbInit: () => { if (failOpen) throw new Error('Could not initialize'); },
+    dispose: () => { if (failClose) throw new Error('Could not close'); },
+  });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, false);
+  assert.match(rgb.snapshot().error, /Retry Open wallet/);
+  await rgb.start();
+  assert.equal(native.nodes.length, 1, 'No new owner while cleanup fails');
+  failClose = false;
+  failOpen = false;
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(native.nodes.length, 2);
+});
+
+
+test('RGB Lib requires explicit per-network endpoints and chain IDs instead of inheriting RLN settings', () => {
+  const env = {
+    EXPO_PUBLIC_UTEXO_INDEXER_URL: 'https://old-rln.example',
+    EXPO_PUBLIC_UTEXO_PROXY_ENDPOINT: 'rpcs://old-rln.example/rpc',
+    EXPO_PUBLIC_UTEXO_ETH_RPC_URL: 'https://old-evm.example',
+  };
+  assert.throws(() => fixture(undefined, {}, env).loadRgbConfig()('utexo'), /EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL/);
+  const configured = { ...env,
+    EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL: 'https://new.example',
+    EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT: 'rpcs://proxy.example/rpc',
+  };
+  const config = fixture(undefined, {}, configured).loadRgbConfig();
+  assert.equal(config('utexo').unlockParams.evmRpcUrls, undefined);
+  assert.throws(() => config('regtest'), /EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL/);
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"1":"https://evm.example"}';
+  assert.equal(fixture(undefined, {}, configured).loadRgbConfig()('utexo').unlockParams.evmRpcUrls['1'], 'https://evm.example');
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"guess":"https://evm.example"}';
+  assert.throws(() => fixture(undefined, {}, configured).loadRgbConfig()('utexo'), /mapping EVM chain IDs/);
+});
+
+test('failure after opening RGB Lib retains ownership until native cleanup succeeds', async () => {
+  let failRead = true, failClose = true;
+  const { load, native } = nativeWalletFixture(undefined, {
+    capabilities: () => { if (failRead) throw new Error('Capability read failed'); },
+    dispose: () => { if (failClose) throw new Error('Cleanup failed'); },
+  });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  assert.match(rgb.snapshot().error, /cleanup failed/);
+  await rgb.start();
+  assert.equal(native.nodes.length, 1);
+  failClose = false;
+  failRead = false;
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+});
+
+
+const rgbKey = 'utexo-demo-wallet-v1-RGB_L1-utexo-default-taproot';
+const rgbDirectory = 'file:///mock-wallet/wallet-connect-v1/RGB_L1/utexo/default/taproot';
+
+test('Delete wallet closes RGB Lib, removes only its selected profile and creates fresh keys on Open', async () => {
+  const { load, calls, native, savedKeys, client } = nativeWalletFixture(undefined, { regenerateRgbKeys: true });
+  const rln = load();
+  const rgb = load('RGB_L1');
+  await rln.start();
+  await rgb.start();
+  await rgb.generateInvoice({ amount: '5', durationMinutes: '180' });
+  const rlnState = rln.snapshot();
+  const oldProvider = rgb.provider(context());
+  await rgb.deleteWallet('utexo');
+  assert.equal(rgb.snapshot().error, '');
+  assert.equal(rgb.snapshot().ready, false);
+  assert.equal(rgb.snapshot().busy, false);
+  assert.equal(rgb.snapshot().address, '');
+  assert.equal(rgb.snapshot().invoice, null);
+  assert.equal(rgb.snapshot().btcBalance, null);
+  assert.equal(rgb.snapshot().assets.length, 0);
+  assert.equal(rgb.snapshot().transfers.length, 0);
+  assert.equal(rgb.snapshot().sessions.length, 0);
+  assert.equal(Object.keys(client.sessions).length, 0);
+  assert.equal(rgb.snapshot().network, 'utexo');
+  assert.match(rgb.snapshot().message, /Open wallet will create a new wallet/);
+  assert.deepEqual(native.deletedDirectories, [rgbDirectory]);
+  assert.deepEqual(native.deletedKeys, [rgbKey, `${rgbKey}-deleting`]);
+  assert.ok(calls.indexOf('dispose') < calls.indexOf('deleteFiles'));
+  assert.ok(calls.indexOf('deleteFiles') < calls.indexOf('deleteCredentials'));
+  assert.equal(savedKeys.has(rgbKey), false);
+  assert.equal(savedKeys.get(rgbKey.replace('utexo-default', 'regtest-default')), 'saved-rgb-mnemonic');
+  assert.equal(rln.snapshot(), rlnState);
+  assert.equal(native.nodes.length, 2, 'Deleting does not open another wallet');
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.equal(native.nodes.length, 3, 'Open must not reuse a disposed facade');
+  assert.deepEqual(native.mnemonics, ['saved-rgb-mnemonic', 'new-rgb-mnemonic']);
+  await assert.rejects(oldProvider.burnAsset({}), /network changed/);
+  assert.equal(native.requests.length, 0);
+});
+
+test('Delete wallet also works before Open and without valid indexer configuration', async () => {
+  const { load, native, savedKeys } = nativeWalletFixture(undefined, {
+    env: { EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL: '' },
+  });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  assert.match(rgb.snapshot().error, /INDEXER_URL/);
+  await rgb.deleteWallet('utexo');
+  assert.equal(rgb.snapshot().error, '');
+  assert.equal(native.nodes.length, 0);
+  assert.equal(savedKeys.has(rgbKey), false);
+  assert.deepEqual(native.deletedDirectories, [rgbDirectory]);
+});
+
+test('a failed sbc profile can be deleted and replaced without opening it successfully', async () => {
+  let oldProfile = true;
+  const { load, native } = nativeWalletFixture(undefined, {
+    regenerateRgbKeys: true,
+    rgbInit: () => { if (oldProfile) throw new Error('WALLET_PROFILE_MISMATCH'); },
+    deleteFiles: () => { oldProfile = false; },
+  });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  assert.equal(rgb.snapshot().error, 'WALLET_PROFILE_MISMATCH');
+  await rgb.deleteWallet('utexo');
+  assert.equal(rgb.snapshot().error, '');
+  await rgb.start();
+  assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
+  assert.deepEqual(native.mnemonics, ['saved-rgb-mnemonic', 'new-rgb-mnemonic']);
+});
+
+test('native cleanup failures retain keys/data until Delete wallet can close the handle', async () => {
+  for (const failedOpen of [false, true]) {
+    let failClose = true;
+    const { load, native, savedKeys } = nativeWalletFixture(undefined, {
+      rgbInit: () => { if (failedOpen) throw new Error('WALLET_PROFILE_MISMATCH'); },
+      dispose: () => { if (failClose) throw new Error('Close failed'); },
+    });
+    const rgb = load('RGB_L1');
+    await rgb.start();
+    await rgb.deleteWallet('utexo');
+    assert.match(rgb.snapshot().error, /Close failed/);
+    assert.equal(rgb.snapshot().ready, false);
+    assert.equal(native.deletedDirectories.length, 0);
+    assert.equal(savedKeys.get(rgbKey), 'saved-rgb-mnemonic');
+    await rgb.start();
+    assert.equal(native.nodes.length, 1, 'No new native owner while cleanup fails');
+    failClose = false;
+    await rgb.deleteWallet('utexo');
+    assert.equal(rgb.snapshot().error, '');
+    assert.equal(savedKeys.has(rgbKey), false);
+    assert.deepEqual(native.deletedDirectories, [rgbDirectory]);
+  }
+});
+
+test('partial deletion stays blocked across app restart and can be retried safely', async () => {
+  for (const failure of ['files', 'keys', 'marker']) {
+    let failing = true;
+    const options = {
+      regenerateRgbKeys: true,
+      deleteFiles: () => { if (failing && failure === 'files') throw new Error('Files unavailable'); },
+      deleteKey: key => {
+        if (failing && ((failure === 'keys' && key === rgbKey) ||
+          (failure === 'marker' && key === `${rgbKey}-deleting`))) throw new Error('Keychain unavailable');
+      },
+    };
+    const { load, savedKeys } = nativeWalletFixture(undefined, options);
+    const rgb = load('RGB_L1');
+    await rgb.start();
+    await rgb.deleteWallet('utexo');
+    assert.match(rgb.snapshot().error, /Could not delete wallet/);
+    assert.equal(savedKeys.get(`${rgbKey}-deleting`), '1');
+    if (failure !== 'marker') assert.equal(savedKeys.get(rgbKey), 'saved-rgb-mnemonic');
+    const restarted = nativeWalletFixture(undefined, { ...options, savedKeys });
+    const afterRestart = restarted.load('RGB_L1');
+    await afterRestart.start();
+    assert.match(afterRestart.snapshot().error, /deletion is incomplete/);
+    assert.equal(restarted.native.nodes.length, 0);
+    failing = false;
+    await afterRestart.deleteWallet('utexo');
+    assert.equal(afterRestart.snapshot().error, '');
+    await afterRestart.start();
+    assert.equal(afterRestart.snapshot().ready, true, afterRestart.snapshot().error);
+    assert.deepEqual(restarted.native.mnemonics, ['new-rgb-mnemonic']);
+  }
+});
+
+test('a failed deletion marker write or session disconnect leaves persisted wallet data intact', async () => {
+  for (const failure of ['marker', 'session']) {
+    const { load, client, native, savedKeys } = nativeWalletFixture(undefined, {
+      writeKey: () => { if (failure === 'marker') throw new Error('Keychain unavailable'); },
+    });
+    const rgb = load('RGB_L1');
+    await rgb.start();
+    if (failure === 'session') client.disconnectSession = async () => { throw new Error('Relay unavailable'); };
+    await rgb.deleteWallet('utexo');
+    assert.match(rgb.snapshot().error, /Could not delete wallet/);
+    assert.equal(native.deletedDirectories.length, 0);
+    assert.equal(native.deletedKeys.length, 0);
+    assert.equal(savedKeys.get(rgbKey), 'saved-rgb-mnemonic');
+    assert.equal(savedKeys.has(`${rgbKey}-deleting`), false);
+  }
+});
+
+test('Delete wallet is blocked during an operation or approval and rejects stale network confirmation', async () => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const { load, native } = nativeWalletFixture(undefined, { refresh: () => pending });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  const refreshing = rgb.refresh();
+  await rgb.deleteWallet('utexo');
+  assert.equal(native.deletedDirectories.length, 0);
+  release();
+  await refreshing;
+  const approval = rgb.confirm('Receive?', 'https://test.example', '5 units');
+  await rgb.deleteWallet('utexo');
+  assert.equal(native.deletedDirectories.length, 0);
+  rgb.snapshot().prompt.resolve(false);
+  await approval;
+  await rgb.selectNetwork('regtest');
+  await rgb.deleteWallet('utexo');
+  assert.match(rgb.snapshot().error, /Network changed/);
+  assert.equal(rgb.snapshot().ready, true);
+  assert.equal(native.deletedDirectories.length, 0);
+});
+
+test('deletion revokes queued website requests and blocks concurrent Open, Delete and network switching', async () => {
+  const { load, native } = nativeWalletFixture();
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  let release;
+  rgb.queue = new Promise(resolve => { release = resolve; });
+  const provider = rgb.provider(context());
+  const queued = assert.rejects(provider.burnAsset({}), /network changed/);
+  const deleting = rgb.deleteWallet('utexo');
+  await new Promise(resolve => setImmediate(resolve));
+  await rgb.start();
+  await rgb.deleteWallet('utexo');
+  await rgb.selectNetwork('regtest');
+  assert.equal(native.nodes.length, 1);
+  assert.equal(native.deletedDirectories.length, 0);
+  release();
+  await Promise.all([deleting, queued]);
+  assert.equal(rgb.snapshot().error, '');
+  assert.equal(rgb.snapshot().network, 'utexo');
+  assert.equal(native.requests.length, 0);
+  assert.deepEqual(native.deletedDirectories, [rgbDirectory]);
 });

@@ -4,7 +4,7 @@ export function parseWalletConnectUri(input: string): string {
   if (!uri.startsWith('wc:')) {
     try {
       const link = new URL(uri);
-      if (link.protocol !== 'myapp:' || link.hostname !== 'wallet')
+      if (link.protocol !== 'myapp:' || !['wallet', 'rgb-lib'].includes(link.hostname))
         throw new Error('Invalid wallet link');
       uri = link.searchParams.get('uri') ?? '';
     } catch {

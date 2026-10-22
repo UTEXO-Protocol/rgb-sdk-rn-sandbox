@@ -22,6 +22,7 @@ const MAPPING = {
   'play.circle.fill': 'play-circle-filled',
   'bitcoinsign.circle.fill': 'currency-bitcoin',
   'link': 'link',
+  'wallet.bifold.fill': 'account-balance-wallet',
 } as IconMapping;
 
 /**

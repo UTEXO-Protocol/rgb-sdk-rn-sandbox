@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
-import { demoWallet, type DemoWalletState } from '@/utils/wallet';
+import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
 import { burnMaxAmount, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
 
-export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletState; initialAssetId?: string }) {
+export function WalletBurn({ state, wallet, initialAssetId = '' }: { state: DemoWalletState; wallet: DemoWalletService; initialAssetId?: string }) {
   const assets = state.assets.filter((asset) => asset.schema === 'BFA');
   const [assetId, setAssetId] = useState(initialAssetId || assets[0]?.assetId || '');
   const [amount, setAmount] = useState('');
@@ -72,7 +72,7 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
         disabled={unavailable || !!validation} style={[styles.button, (unavailable || !!validation) && styles.disabled]}
         onPress={() => {
           setCopied('');
-          void demoWallet.burnAsset(form).then((record) => { if (record?.state === 'complete') setAmount(''); });
+          void wallet.burnAsset(form).then((record) => { if (record?.state === 'complete') setAmount(''); });
         }}>
         <Text style={styles.buttonText}>Review burn</Text>
       </Pressable>

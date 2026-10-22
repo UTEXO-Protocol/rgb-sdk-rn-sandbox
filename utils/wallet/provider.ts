@@ -1,6 +1,8 @@
-import type { UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import type { AnyUtexoWallet } from '@utexo/rgb-sdk-rn';
 import { WebRgbProvider, type WebRgbOptions } from '@utexo/rgb-sdk-rn/webrgb';
 import type { WalletConnectBackend, WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
+import type { RgbBlindReceiveArgs } from '@utexo/webrgb';
+import { MIN_INVOICE_DURATION_SECONDS } from './invoice';
 
 export interface DemoProviderOptions {
   context: WalletConnectWalletContext;
@@ -11,7 +13,7 @@ export interface DemoProviderOptions {
 
 /** The SDK supplies WebRGB results; the demo adds its operation queue and UI. */
 export function createDemoRgbProvider(
-  wallet: UTEXOWallet,
+  wallet: AnyUtexoWallet,
   options: DemoProviderOptions,
 ): WalletConnectBackend {
   const { context } = options;
@@ -32,7 +34,19 @@ export function createDemoRgbProvider(
     enable: wrap('enable', () => provider.enable()),
     getInfo: wrap('getInfo', () => provider.getInfo()),
     getAddress: wrap('getAddress', () => provider.getAddress()),
-    blindReceive: wrap('blindReceive', provider.blindReceive.bind(provider)),
+    blindReceive: wrap('blindReceive', (args: RgbBlindReceiveArgs = {}) => {
+      // Apply the floor before SDK validation/approval so the user sees the actual expiry.
+      if (args && typeof args === 'object' && !Array.isArray(args)) {
+        const seconds = args.durationSeconds ?? MIN_INVOICE_DURATION_SECONDS;
+        args = {
+          ...args,
+          durationSeconds: typeof seconds === 'number' && Number.isSafeInteger(seconds) && seconds > 0
+            ? Math.max(seconds, MIN_INVOICE_DURATION_SECONDS)
+            : seconds,
+        };
+      }
+      return provider.blindReceive(args);
+    }),
     listAssets: wrap('listAssets', () => provider.listAssets()),
     getAssetBalance: wrap('getAssetBalance', provider.getAssetBalance.bind(provider)),
     listTransfers: wrap('listTransfers', provider.listTransfers.bind(provider)),

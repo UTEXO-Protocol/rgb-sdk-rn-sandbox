@@ -1,4 +1,4 @@
-import type { UTEXOWallet, BurnOperationRecord } from '@utexo/rgb-sdk-rn';
+import type { AnyUtexoWallet, BurnOperationRecord, WalletProtocol, WalletTransfer } from '@utexo/rgb-sdk-rn';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletConnectSession } from '@utexo/webrgb-walletconnect';
 
@@ -10,6 +10,7 @@ export type WalletPrompt = {
   resolve: (approved: boolean) => void;
 };
 export type DemoWalletState = {
+  protocol: WalletProtocol;
   ready: boolean;
   busy: boolean;
   address: string;
@@ -27,9 +28,9 @@ export type DemoWalletState = {
     expirationTimestamp?: number | null;
     source: string;
   } | null;
-  btcBalance: Awaited<ReturnType<UTEXOWallet['getBtcBalance']>> | null;
+  btcBalance: Awaited<ReturnType<AnyUtexoWallet['getBtcBalance']>> | null;
   assets: WalletAsset[];
-  transfers: (Awaited<ReturnType<UTEXOWallet['listTransfers']>>[number] & { assetId: string })[];
+  transfers: (WalletTransfer & { assetId: string })[];
   updatedAt: number | null;
   refreshing: boolean;
   activeRequest: string;

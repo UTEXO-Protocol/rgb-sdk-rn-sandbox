@@ -8,6 +8,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
 import { WebRgbProvider, WEBRGB_READ_METHODS } from '@utexo/rgb-sdk-rn/webrgb';
+import * as invoicePolicy from '../utils/wallet/invoice.ts';
 
 const source = ts.transpileModule(
   readFileSync(new URL('../utils/wallet/provider.ts', import.meta.url), 'utf8'),
@@ -15,12 +16,23 @@ const source = ts.transpileModule(
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   },
 ).outputText;
+// Exercise the public facade and real RLN mapper, substituting only its native port.
+function rlnTransfers(rln, assetId) {
+  const wallet = new UTEXOWallet({
+    network: 'regtest', storageDirPath: '/tmp/demo-transfer-test',
+    daemonListeningPort: 30170, ldkPeerListeningPort: 19750,
+  }, { initNode: async () => {}, unlockNode: async () => {} });
+  wallet.engine.rln = rln;
+  return wallet.listTransfers(assetId);
+}
+
 const module = { exports: {} };
 vm.runInNewContext(source, {
   exports: module.exports,
   crypto: globalThis.crypto,
   Uint8Array,
   require: (name) => {
+    if (name === './invoice') return invoicePolicy;
     assert.equal(name, '@utexo/rgb-sdk-rn/webrgb');
     return { WebRgbProvider };
   },
@@ -43,7 +55,7 @@ test('burn history reports the burned amount, never its change, through the real
   let reads = 0;
   const wallet = {
     isDisposed: () => false,
-    async listTransfers(id) { assert.equal(this, wallet); assert.equal(id, assetId); reads++; return UTEXOWallet.prototype.listTransfers.call({ rln: { rlnListTransfers: async () => records } }, id); },
+    async listTransfers(id) { assert.equal(this, wallet); assert.equal(id, assetId); reads++; return rlnTransfers({ rlnListTransfers: async () => records }, id); },
     async refreshWallet() { assert.equal(this, wallet); },
   };
   const abort = new AbortController();
@@ -80,7 +92,7 @@ test('the installed SDK supplies exact burn amounts through the demo without a j
   ];
   const rln = { async rlnListTransfers(id) { assert.equal(id, assetId); return raw; } };
   const wallet = { isDisposed: () => false,
-    listTransfers: asset => UTEXOWallet.prototype.listTransfers.call({ rln }, asset) };
+    listTransfers: asset => rlnTransfers(rln, asset) };
   const sdk = await wallet.listTransfers(assetId);
   assert.equal(sdk[0].requestedAssignment.amount, 100000);
   assert.equal(sdk[0].assignments[0].amount, 900000);
@@ -99,6 +111,45 @@ test('the installed SDK supplies exact burn amounts through the demo without a j
   assert.equal(transfers.length, raw.length);
 });
 const { createDemoRgbProvider } = module.exports;
+
+test('receive invoices keep a three-hour mint window through SDK approval and native creation', async () => {
+  const approvals = [], invoices = [];
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const wallet = {
+    isDisposed: () => false,
+    blindReceive: async (args) => {
+      invoices.push(args);
+      return { invoice: 'rgb:invoice', expirationTimestamp: issuedAt + args.durationSeconds };
+    },
+  };
+  const provider = createDemoRgbProvider(wallet, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async (request) => { approvals.push(request.params); return true; },
+    run: (_method, _args, action) => action(),
+  });
+  for (const durationSeconds of [undefined, 60, 3600, 10800, 21600]) {
+    const args = Object.freeze({ amount: 5, durationSeconds });
+    const result = await provider.blindReceive(args);
+    const expected = durationSeconds === 21600 ? 21600 : 10800;
+    assert.equal(result.expirationTimestamp, issuedAt + expected);
+    assert.ok(result.expirationTimestamp - (issuedAt + 7) > 3600, 'Mint still has over an hour after preparation');
+    assert.equal(approvals.at(-1).durationSeconds, expected, 'Approve the actual invoice duration');
+    assert.equal(invoices.at(-1).durationSeconds, expected);
+    assert.equal(invoices.at(-1).amount, 5);
+    assert.equal(args.durationSeconds, durationSeconds, 'Leave the original dApp request unchanged');
+  }
+  assert.equal((await provider.blindReceive()).expirationTimestamp, issuedAt + 10800);
+  const count = invoices.length;
+  for (const durationSeconds of [0, -1, 1.5, NaN, Infinity, '3600', 2_592_001]) {
+    await assert.rejects(provider.blindReceive({ durationSeconds }), { code: 'INVALID_PARAMS' });
+  }
+  for (const args of [null, [], 'invalid']) {
+    await assert.rejects(provider.blindReceive(args), { code: 'INVALID_PARAMS' });
+  }
+  assert.equal(invoices.length, count, 'Invalid requests do not allocate a receive UTXO');
+  assert.equal(approvals.length, count, 'Invalid requests are rejected before approval');
+});
+
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((a, b) => {
@@ -222,10 +273,10 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
       proofReads++;
       return bytes.toString('base64');
     },
-    listTransfers: asset => UTEXOWallet.prototype.listTransfers.call({ rln: {
+    listTransfers: asset => rlnTransfers({
       rlnListTransfers: async () => [{ txid, idx: 3, kind: 'Burn', status: 'Settled',
         requestedAssignment: 'Fungible(5)', assignments: ['Fungible(95)'] }],
-    } }, asset),
+    }, asset),
     listTransactionsByTxid: async () => [{ txid, confirmationTime: { height: 100 } }],
     getNetworkInfo: async () => ({ blockHeight: 102 }),
     refreshWallet: async () => {},
@@ -260,7 +311,10 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   const provider = await connection.approval();
   t.after(() => provider.dispose());
   await provider.enable();
-  assert.equal((await provider.blindReceive({ amount: 5 })).invoice, 'rgb:invoice');
+  const invoiceRequestedAt = Math.floor(Date.now() / 1000);
+  const invoice = await provider.blindReceive({ amount: 5, durationSeconds: 3600 });
+  assert.equal(invoice.invoice, 'rgb:invoice');
+  assert.ok(invoice.expirationTimestamp - invoiceRequestedAt >= 10800, 'A one-hour dApp request receives a three-hour invoice');
   const result = await provider.burnAsset({
     network,
     assetId,
@@ -330,4 +384,34 @@ test('revoking a request during confirmation prevents the SDK from starting burn
   );
   await assert.rejects(provider.burnAsset(args), { code: 'NOT_ENABLED' });
   assert.equal(burns, 0);
+});
+
+test('RGB Lib reports RGB_L1 and cannot advertise signing or bridge payout methods', async () => {
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'regtest',
+    getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    signMessage: async () => { throw new Error('Must not reach unsupported signing'); },
+  };
+  const provider = new WebRgbProvider(native, {
+    origin: 'https://bridge.example', sessionApproved: true,
+    confirm: async () => { throw new Error('No approval expected for info'); },
+  });
+  const info = await provider.getInfo();
+  assert.equal(info.protocol, 'RGB_L1');
+  assert.equal(info.burnRecipientNamespaces, undefined);
+  assert.ok(!info.methods.includes('burnAsset'));
+  assert.ok(!info.methods.includes('signMessage'));
+  await assert.rejects(provider.signMessage('test'), { code: 'METHOD_NOT_SUPPORTED' });
+  // Run the real adapter's account validation (the two profiles use distinct prefixes).
+  const events = new EventEmitter();
+  const transport = createWalletConnectWallet({
+    client: { on: events.on.bind(events), off: events.off.bind(events), getActiveSessions: () => ({}), core: { expirer: new EventEmitter() } },
+    network: 'regtest', account: 'RGB-L1-' + 'a'.repeat(64),
+    methods: WEBRGB_READ_METHODS,
+    approveSession: async () => false,
+    getProvider: () => provider,
+  });
+  transport.dispose();
 });
