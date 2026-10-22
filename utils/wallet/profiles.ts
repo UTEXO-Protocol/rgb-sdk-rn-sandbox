@@ -1,3 +1,4 @@
+import type { BurnDestinationRoute } from '@utexo/rgb-sdk-rn/webrgb';
 import type { AnyUtexoWallet, WalletProtocol } from '@utexo/rgb-sdk-rn';
 import { buildDemoWalletConfig, type DemoWalletNetwork } from '../env';
 import type { ConnectionProfile } from './connection';
@@ -15,6 +16,7 @@ export interface WalletProfile {
   /** Remove this profile's persisted data after its SDK handles have closed. */
   deleteSaved?(network: DemoWalletNetwork): Promise<void>;
   burnEnabled(network: DemoWalletNetwork): boolean;
+  burnDestinationRoutes?(network: DemoWalletNetwork): readonly BurnDestinationRoute[];
 }
 
 export const rlnProfile: WalletProfile = {
@@ -47,6 +49,15 @@ export const rgbLibProfile: WalletProfile = {
     return openSavedRgbLibWallet(network, stopped);
   },
   deleteSaved: deleteSavedRgbLibWallet,
-  // Native burn support alone does not establish payout bridge compatibility.
-  burnEnabled: () => false,
+  burnEnabled: () => true,
+  // Deployment routes shared with utexo-bridge-fe; never supplied by the dApp.
+  burnDestinationRoutes: (network) => network === 'regtest'
+    ? [{ chainId: 'eip155:31337', dstEid: 0 }]
+    : [
+        { chainId: 'eip155:42161', dstEid: 0 },
+        { chainId: 'eip155:1', dstEid: 30101 },
+        { chainId: 'eip155:137', dstEid: 30109 },
+        { chainId: 'eip155:9745', dstEid: 30383 },
+        { chainId: 'tron:728126428', dstEid: 30420 },
+      ],
 };

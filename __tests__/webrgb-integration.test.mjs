@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
-import { WebRgbProvider, WEBRGB_READ_METHODS } from '@utexo/rgb-sdk-rn/webrgb';
+import { WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk-rn/webrgb';
 import * as invoicePolicy from '../utils/wallet/invoice.ts';
 
 const source = ts.transpileModule(
@@ -159,7 +159,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-test('packed adapter connects the demo wallet provider, creates an invoice and returns a complete burn proof', async (t) => {
+for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${protocol}, creates an invoice and returns a complete burn proof`, async (t) => {
   const approved = deferred(),
     events = new EventEmitter(),
     dappEvents = new EventEmitter();
@@ -174,7 +174,10 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
     proofReads = 0;
   const assetId = 'rgb:mock',
     txid = 'ab'.repeat(32),
-    network = 'regtest';
+    network = protocol === 'RGB_L1' ? 'utexo' : 'regtest';
+  const payout = { chainId: protocol === 'RGB_L1' ? 'eip155:42161' : 'eip155:31337', address: '0x' + '12'.repeat(20) };
+  const destinationRoutes = protocol === 'RGB_L1' ? [{ chainId: 'eip155:42161', dstEid: 0 }] : undefined;
+  const burnDestination = destinationRoutes ? createBurnDestination(payout, destinationRoutes) : undefined;
   const bytes = Buffer.alloc(100000, 37);
   const dapp = {
     on: dappEvents.on.bind(dappEvents),
@@ -253,6 +256,7 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
     disconnectSession: dapp.disconnect,
   };
   const native = {
+    protocol,
     isDisposed: () => false,
     getNetwork: () => network,
     getBfaCapabilities: async () => ({ burn: true, consignment: true }),
@@ -265,7 +269,8 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
     async burn(params) {
       assert.equal(records[0].state, 'pending');
       assert.equal(params.amount, '5');
-      assert.equal(params.burnRecipient, '0'.repeat(24) + '12'.repeat(20));
+      assert.equal(params.burnRecipient, burnDestination ? burnDestinationHash(burnDestination).slice(2) : '0'.repeat(24) + '12'.repeat(20));
+      assert.equal(params.minConfirmations, 6);
       burns++;
       return { txid, batchTransferIdx: 8 };
     },
@@ -297,7 +302,7 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
         },
         run: (_method, _args, action) => action(),
         burn: {
-          operations,
+          operations, destinationRoutes,
         },
       }),
   });
@@ -311,18 +316,20 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   const provider = await connection.approval();
   t.after(() => provider.dispose());
   await provider.enable();
+  const info = await provider.getInfo();
+  assert.equal(info.protocol, protocol);
+  assert.equal(info.burnDestinationVersion, protocol === 'RGB_L1' ? 1 : undefined);
+  assert.deepEqual(info.burnDestinationRoutes, destinationRoutes);
   const invoiceRequestedAt = Math.floor(Date.now() / 1000);
   const invoice = await provider.blindReceive({ amount: 5, durationSeconds: 3600 });
   assert.equal(invoice.invoice, 'rgb:invoice');
   assert.ok(invoice.expirationTimestamp - invoiceRequestedAt >= 10800, 'A one-hour dApp request receives a three-hour invoice');
   const result = await provider.burnAsset({
-    network,
-    assetId,
-    amount: '5',
-    burnRecipient: { chainId: 'eip155:31337', address: '0x' + '12'.repeat(20) },
-    feeRate: 2,
-    minConfirmations: 3,
+    network, assetId, amount: '5', burnRecipient: payout,
+    ...(burnDestination && { burnDestination }), feeRate: 2, minConfirmations: 6,
   });
+  assert.deepEqual(result.burnDestination, burnDestination);
+  assert.deepEqual(records[0].metadata.burnDestination, burnDestination);
   assert.equal(result.transferId, txid);
   assert.equal(result.requestId, undefined);
   assert.equal(requests.find((r) => r.method === 'rgb_burnAsset').params[0].requestId, undefined);
@@ -337,6 +344,7 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
   const status = await provider.getTransferStatus(txid, assetId);
   assert.equal(status.status, 'Settled');
   assert.equal(status.transfer.blockHeight, 100);
+  assert.deepEqual(status.transfer.burnDestination, burnDestination);
   assert.equal(status.transfer.requestId, undefined);
   assert.equal(burns, 1);
   assert.equal(proofReads, 1);
@@ -386,7 +394,7 @@ test('revoking a request during confirmation prevents the SDK from starting burn
   assert.equal(burns, 0);
 });
 
-test('RGB Lib reports RGB_L1 and cannot advertise signing or bridge payout methods', async () => {
+test('RGB Lib without a burn extension does not advertise signing or bridge payout methods', async () => {
   const native = {
     protocol: 'RGB_L1',
     isDisposed: () => false,

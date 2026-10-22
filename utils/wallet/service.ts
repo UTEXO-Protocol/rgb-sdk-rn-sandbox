@@ -242,7 +242,7 @@ export class DemoWalletService {
       const opened = await this.profile.open(network, stoppedWallet);
       wallet = opened.wallet;
       this.account = opened.account;
-      this.operations = wallet.protocol === 'RGB_LN' ? new BurnOperations(wallet, this.burnStore) : undefined;
+      this.operations = new BurnOperations(wallet, this.burnStore);
       await this.operations?.retryPersistence();
       const capabilities = await wallet.getBfaCapabilities();
       const burns = await this.burnStore.readAll();
@@ -442,7 +442,7 @@ export class DemoWalletService {
       const generation = this.generation;
       const operations = this.operations;
       const asset = this.state.assets.find((item) => item.assetId === form.assetId);
-      const { params, metadata } = prepareLocalBurn(form, asset, this.state.network);
+      const { params, metadata } = prepareLocalBurn(form, asset, this.state.network, this.profile.burnDestinationRoutes?.(this.state.network));
       const assertCurrent = () => {
         if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
           throw new Error('Wallet changed. Review the burn again.');
@@ -541,7 +541,7 @@ export class DemoWalletService {
     return createDemoRgbProvider(this.wallet, {
       context,
       burn: this.state.burnAvailable
-        ? { operations: this.operations! }
+        ? { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) }
         : undefined,
       confirm: (request: WebRgbApproval) => {
         const isBurn = request.method === 'burnAsset';

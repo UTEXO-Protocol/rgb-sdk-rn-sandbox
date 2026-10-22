@@ -181,9 +181,15 @@ The RLN mock faucet tools are also confined to Wallet; fund RGB Lib through its
 configured Bitcoin network. Missing configuration appears on the tab with the
 specific environment variable names. Restart Metro after setting them. The website must support `RGB_L1` on the same network; the deep
 link is `myapp://rgb-lib?uri=…`. WebRGB advertises the SDK's on-chain methods.
-Bridge burn/payout controls and message signing are unavailable in this mode
-until proof interoperability is established; native BFA support alone is not
-sufficient. RLN burn behavior is unchanged.
+RGB Lib supports local burns and WebRGB `burnAsset` / `getConsignment` when
+native burn and proof export are available. Payout routes in `utils/wallet/profiles.ts`
+match the bridge's V1 destination contract: Arbitrum, Ethereum, Polygon, Plasma and
+Tron on utexo; local EVM 31337 on regtest. The SDK commits the destination hash
+in the proof and saves the destination in the burn journal for recovery. An existing
+local burn can be shared through the bridge's Existing burn → From wallet flow;
+proof sharing requires approval. Message signing remains unavailable for RGB Lib.
+RLN burn behavior is unchanged. After updating, fully reload the demo and reconnect
+the WalletConnect session so it negotiates burn/proof methods.
 
 Install the local dependency and rebuild (Expo Go cannot load native bindings):
 

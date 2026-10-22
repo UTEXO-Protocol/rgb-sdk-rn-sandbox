@@ -1,5 +1,5 @@
 import { BurnOperations, normalizeBurnRecord } from '@utexo/rgb-sdk-rn';
-import { encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
+import { burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -55,7 +55,7 @@ function fixture(init, modules = {}, env = {}) {
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
       if (name === '@walletconnect/core') return { Core: class { constructor(options) { stats.cores++; stats.coreOptions.push(options); } } };
       if (name === '@reown/walletkit') return { WalletKit: { init: (options) => {
         stats.clients++;
@@ -247,7 +247,7 @@ function nativeWalletFixture(initError, options = {}) {
         async getBfaCapabilities() { await options.capabilities?.(); return { burn: !!options.burnAvailable, consignment: !!options.burnAvailable }; }
         async getAssetBalance() { return { spendable: options.available?.() ?? 5 }; }
         async burn(params) {
-          const journal = JSON.parse(storage.get(`utexo-burn-journal-v1:rgb:${this.network}:saved-node-pubkey`));
+          const journal = JSON.parse(storage.get(`utexo-burn-journal-v1:rgb:${this.network}:${this.protocol === 'RGB_L1' ? 'RGB-L1-' : ''}saved-node-pubkey`));
           assert.equal(journal.at(-1).state, 'pending', 'Persist before invoking native burn');
           native.burns.push(params);
           await options.burn?.(params);
@@ -925,7 +925,7 @@ test('RLN and RGB Lib coexist with separate keys, directories, preferences, jour
   assert.equal(rln.snapshot().protocol, 'RGB_LN');
   assert.equal(rgb.snapshot().protocol, 'RGB_L1');
   assert.equal(rln.snapshot().burnAvailable, true);
-  assert.equal(rgb.snapshot().burnAvailable, false, 'Native burn does not authorize bridge payouts');
+  assert.equal(rgb.snapshot().burnAvailable, true);
   assert.equal(native.nodes[0].storageDirPath, '/mock-wallet/wallet-connect-v1/utexo');
   assert.equal(native.nodes[1].storageDirPath, '/mock-wallet/wallet-connect-v1/RGB_L1/utexo/default/taproot');
   assert.ok(native.keys.includes('utexo-demo-wallet-v1-utexo'));
@@ -937,7 +937,8 @@ test('RLN and RGB Lib coexist with separate keys, directories, preferences, jour
   ]);
   assert.equal(stats.transports[0].account, 'saved-node-pubkey');
   assert.equal(stats.transports[1].account, 'RGB-L1-saved-node-pubkey');
-  assert.ok(!stats.transports[1].methods.includes('burnAsset'));
+  assert.ok(stats.transports[1].methods.includes('burnAsset'));
+  assert.ok(stats.transports[1].methods.includes('getConsignment'));
   const original = rln.snapshot();
   await rgb.selectNetwork('regtest');
   assert.equal(rgb.snapshot().network, 'regtest');
@@ -1237,4 +1238,37 @@ test('deletion revokes queued website requests and blocks concurrent Open, Delet
   assert.equal(rgb.snapshot().network, 'utexo');
   assert.equal(native.requests.length, 0);
   assert.deepEqual(native.deletedDirectories, [rgbDirectory]);
+});
+
+
+test('local RGB Lib burns commit V1 destinations and recover from their separate journal', async (t) => {
+  const { load, native, storage } = nativeWalletFixture(undefined, { burnAvailable: true });
+  const rgb = load('RGB_L1');
+  await rgb.start();
+  t.after(() => rgb.snapshot().prompt?.resolve(false));
+  const form = { ...localBurnForm, payoutChainId: 'eip155:42161' };
+  const task = rgb.burnAsset(form);
+  const prompt = await waitForBurnPrompt(rgb);
+  assert.ok(prompt.details.includes(form.payoutAddress));
+  assert.match(prompt.details, /Arbitrum/);
+  prompt.resolve(true);
+  const result = await task;
+  assert.equal(result.state, 'complete', rgb.snapshot().error);
+  const destination = { version: 1, destinationChainId: 42161, dstEid: 0, recipient: form.payoutAddress };
+  assert.deepEqual(JSON.parse(JSON.stringify(result.metadata.burnDestination)), destination);
+  assert.equal(native.burns[0].burnRecipient, burnDestinationHash(destination).slice(2));
+  const key = 'utexo-burn-journal-v1:rgb:utexo:RGB-L1-saved-node-pubkey';
+  assert.equal(JSON.parse(storage.get(key))[0].state, 'complete');
+  assert.equal(storage.has('utexo-burn-journal-v1:rgb:utexo:saved-node-pubkey'), false);
+  const restart = nativeWalletFixture(undefined, { burnAvailable: true });
+  restart.storage.set(key, storage.get(key));
+  const reopened = restart.load('RGB_L1');
+  await reopened.start();
+  assert.equal(reopened.snapshot().burns[0].result.txid, result.result.txid);
+  assert.deepEqual(JSON.parse(JSON.stringify(reopened.snapshot().burns[0].metadata.burnDestination)), destination);
+  assert.equal(restart.native.burns.length, 0, 'Reopening must not reburn');
+  const unsupported = await reopened.burnAsset({ ...form, payoutChainId: 'eip155:56' });
+  assert.equal(unsupported, undefined);
+  assert.match(reopened.snapshot().error, /Unsupported V1 payout route/);
+  assert.equal(reopened.snapshot().prompt, null);
 });
