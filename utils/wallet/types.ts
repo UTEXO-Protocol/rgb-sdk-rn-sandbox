@@ -26,6 +26,8 @@ export type DemoWalletState = {
     assetId?: string;
     amount?: number;
     expirationTimestamp?: number | null;
+    batchTransferIdx?: number;
+    recipientId?: string;
     source: string;
   } | null;
   btcBalance: Awaited<ReturnType<AnyUtexoWallet['getBtcBalance']>> | null;

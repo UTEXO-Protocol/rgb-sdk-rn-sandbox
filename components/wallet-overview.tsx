@@ -5,7 +5,7 @@ import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
 import { mockFaucetEnabled } from '@/utils/mock-faucet';
 import { WalletBurn } from './wallet-burn';
 import { LOCAL_BURN_ORIGIN, payoutChainLabel } from '@/utils/wallet/burn';
-import { MIN_INVOICE_DURATION_MINUTES } from '@/utils/wallet/invoice';
+import { canCancelInvoice, MIN_INVOICE_DURATION_MINUTES } from '@/utils/wallet/invoice';
 
 type Tab = 'Assets' | 'Receive' | 'Burn' | 'Activity' | 'Tools';
 
@@ -166,9 +166,18 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
           <Text style={styles.text}>{transfer.amountBaseUnits} base units</Text>}
         {transfer.kind === 'Burn' && transfer.amountBaseUnits === undefined &&
           <Text style={styles.hint}>Burn amount unavailable</Text>}
+        {(transfer.kind === 'ReceiveBlind' || transfer.kind === 'ReceiveWitness') && <>
+          <Text style={styles.hint}>Invoice #{transfer.idx}</Text>
+          {!!transfer.expiration && <Text style={styles.hint}>
+            Expires {new Date(transfer.expiration * 1000).toLocaleString()}
+          </Text>}
+        </>}
         {!!transfer.createdAt && <Text style={styles.hint}>{new Date(transfer.createdAt * 1000).toLocaleString()}</Text>}
         <Text selectable style={styles.mono}>{transfer.txid || transfer.recipientId || `Transfer ${transfer.idx}`}</Text>
         {transfer.txid && <WalletButton title="Copy transaction ID" onPress={() => { void copy(transfer.txid!, 'Transaction ID'); }} />}
+        {state.protocol === 'RGB_L1' && canCancelInvoice(transfer) &&
+          <WalletButton title="Cancel invoice" destructive disabled={disabled}
+            onPress={() => { void wallet.cancelInvoice(transfer.idx); }} />}
       </View>)}
       {state.transfers.length > 20 && <Text style={styles.hint}>Showing the 20 most recent transfers.</Text>}
       {!!state.burns.length && <Text style={styles.heading}>Burn operations</Text>}
@@ -192,7 +201,7 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
     </>}
 
     {tab === 'Tools' && <>
-      <Text style={styles.heading}>Receive setup</Text>
+      <Text style={styles.heading}>RGB UTXO setup</Text>
       <Text style={styles.text}>Fund your BTC address, then create receive UTXOs. Creating them uses a Bitcoin transaction at 2 sat/vB.</Text>
       <Text selectable style={styles.mono}>{state.address}</Text>
       <WalletButton title="Copy BTC address" onPress={() => { void copy(state.address, 'BTC address'); }} />
@@ -201,6 +210,9 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
         <WalletButton title="Get test BTC" disabled={disabled} onPress={() => { void wallet.mockFundOrMine('fund'); }} />
       </>}
       <WalletButton title="Prepare receive UTXOs" disabled={disabled} onPress={() => { void wallet.prepareReceive(); }} />
+      <Text style={styles.hint}>Prepare tops up to 4 outputs with allocation slots. If a burn reports InsufficientAllocationSlots, create additional outputs; existing ones may hold assets, be reserved, or have too little BTC for fees.</Text>
+      <WalletButton title="Create 4 additional UTXOs" disabled={disabled}
+        onPress={() => { void wallet.prepareReceive('additional'); }} />
       {faucetEnabled && <WalletButton title="Mine 3 regtest blocks" disabled={disabled}
         onPress={() => { void wallet.mockFundOrMine('mine'); }} />}
       <Text style={styles.text}>{state.protocol === 'RGB_L1' ? 'On-chain RGB mode. Bridge payouts are not enabled for this wallet.' : state.burnAvailable ? 'Burn BFA tokens in the Burn tab or through a connected website. Saved burn proofs can be shared with the bridge through WalletConnect.' : 'BFA burn is unavailable with this native build or network configuration.'}</Text>

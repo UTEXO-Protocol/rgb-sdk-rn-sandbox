@@ -5,7 +5,7 @@ import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
 import { isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
 import { mockFaucetEnabled, mockFaucetRequest } from '../mock-faucet';
 import { createDemoRgbProvider } from './provider';
-import { MIN_INVOICE_DURATION_MINUTES } from './invoice';
+import { canCancelInvoice, MIN_INVOICE_DURATION_MINUTES } from './invoice';
 import { WalletConnection } from './connection';
 import { rlnProfile, rgbLibProfile, type WalletProfile } from './profiles';
 import { createBurnStore } from './storage';
@@ -417,18 +417,113 @@ export class DemoWalletService {
     });
   }
 
-  async prepareReceive() {
-    return this.localAction('Prepare receive UTXOs', async (wallet) => {
-      await wallet.createUtxos({
-        upTo: true,
-        num: 4,
-        size: 1000,
-        feeRate: 2,
+  async cancelInvoice(transferIdx: number) {
+    return this.localAction('Cancel receive invoice', async (wallet) => {
+      const selected = this.state.transfers.find((transfer) => transfer.idx === transferIdx);
+      if (wallet.protocol !== 'RGB_L1' || !selected || !canCancelInvoice(selected))
+        throw new Error('Only a receive invoice still waiting for a counterparty can be cancelled.');
+      const batchTransferIdx = selected.batchTransferIdx!;
+      const generation = this.generation;
+      const assertCurrent = () => {
+        if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
+          throw new Error('Wallet changed. Review the invoice again.');
+      };
+      const readTarget = async () => {
+        const transfers = await wallet.listTransfers();
+        assertCurrent();
+        const target = transfers.find((transfer) =>
+          transfer.idx === transferIdx && transfer.batchTransferIdx === batchTransferIdx);
+        if (!target) throw new Error('Invoice no longer found. Refresh Activity.');
+        // Keep the actual status visible even if a later balance read fails.
+        this.set({ transfers: this.state.transfers.map((transfer) =>
+          transfer.idx === transferIdx ? { ...target, assetId: transfer.assetId } : transfer) });
+        return { target, transfers };
+      };
+      const assertCancellable = async () => {
+        const { target, transfers } = await readTarget();
+        if (!canCancelInvoice(target))
+          throw new Error(`Invoice cannot be cancelled: current status is ${target.status}.`);
+        // failTransfers targets a batch, not an individual transfer.
+        if (transfers.filter((transfer) => transfer.batchTransferIdx === batchTransferIdx).length !== 1)
+          throw new Error('This invoice shares a batch with other transfers and cannot be cancelled individually.');
+      };
+      await assertCancellable();
+      const approved = await this.confirm('Cancel receive invoice?', 'On this device', [
+        `Invoice #${transferIdx}`,
+        `Network: ${this.state.network}`,
+        `Asset: ${selected.assetId || 'Any / new asset'}`,
+        'This marks the receive invoice as Failed and releases its reservation. The invoice can no longer be used to receive tokens.',
+      ].join('\n'));
+      if (!approved) {
+        this.set({ message: 'Invoice kept active.' });
+        return;
+      }
+      assertCurrent();
+      await assertCancellable();
+      let failure = '';
+      try {
+        await wallet.failTransfers({ batchTransferIdx, noAssetOnly: !selected.assetId, skipSync: false });
+      } catch (error) {
+        // Native can advance the transfer before refusing cancellation.
+        failure = messageOf(error);
+      }
+      // A true return value can also mean the receive advanced during refresh.
+      // Confirm Failed from native history before reporting cancellation.
+      const { target } = await readTarget().catch((error) => {
+        throw new Error(`Could not verify cancellation. Refresh Activity: ${messageOf(error)}`);
       });
-      await this.readWalletData();
+      const cancelled = target.status === 'Failed';
+      if (cancelled) {
+        const invoice = this.state.invoice;
+        if (invoice && (invoice.batchTransferIdx === batchTransferIdx ||
+          invoice.invoice === target.invoiceString ||
+          (!!invoice.recipientId && invoice.recipientId === target.recipientId)))
+          this.set({ invoice: null });
+      }
       this.set({
-        message:
-          'Receive UTXOs prepared. Wait for their transaction to confirm before requesting an invoice.',
+        message: cancelled
+          ? `Invoice #${transferIdx} cancelled (Failed). Receive reservation released.`
+          : `Invoice #${transferIdx} was not cancelled. Current status: ${target.status}.`,
+        error: cancelled ? '' : failure,
+      });
+      await this.readWalletData().catch((error) => {
+        this.set({ error: `${cancelled ? 'Invoice cancelled' : 'Invoice status checked'}; balances could not refresh: ${messageOf(error)}` });
+      });
+    });
+  }
+
+  async prepareReceive(mode: 'ensure' | 'additional' = 'ensure') {
+    return this.localAction('Prepare RGB UTXOs', async (wallet) => {
+      const generation = this.generation;
+      if (mode === 'additional') {
+        const approved = await this.confirm('Create additional RGB UTXOs?', 'On this device', [
+          `Network: ${this.state.network}`,
+          'Create up to 4 new UTXOs of 1,000 sats each, even if existing outputs still have allocation slots.',
+          'This moves BTC within your wallet and pays a Bitcoin network fee at 2 sat/vB.',
+        ].join('\n'));
+        if (!approved) {
+          this.set({ message: 'UTXO creation cancelled.' });
+          return;
+        }
+        if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
+          throw new Error('Wallet changed. Review UTXO creation again.');
+      }
+      let created: number;
+      try {
+        created = await wallet.createUtxos({ upTo: mode === 'ensure', num: 4, size: 1000, feeRate: 2 });
+      } catch (error) {
+        if (mode !== 'ensure' || messageOf(error) !== 'AllocationsAlreadyAvailable') throw error;
+        // A count of outputs with allocation slots does not ensure enough empty
+        // outputs or BTC for a burn. Never silently retry with an extra transaction.
+        this.set({ message: 'At least 4 UTXOs already have allocation slots. A burn may still need additional empty outputs or BTC for fees. Use Create 4 additional UTXOs in Tools.' });
+        await this.readWalletData().catch((readError) => {
+          this.set({ error: `Could not refresh balances: ${messageOf(readError)}` });
+        });
+        return;
+      }
+      this.set({ message: `${created} RGB UTXO${created === 1 ? '' : 's'} created. Wait for confirmation, then refresh the wallet.` });
+      await this.readWalletData().catch((error) => {
+        this.set({ error: `UTXOs created; balances could not refresh: ${messageOf(error)}` });
       });
     });
   }

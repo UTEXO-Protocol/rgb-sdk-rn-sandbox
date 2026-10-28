@@ -127,7 +127,7 @@ test('a failed WalletKit initialization retries with the same Core', async () =>
 
 function nativeWalletFixture(initError, options = {}) {
   const calls = [];
-  const native = { refreshes: 0, invoices: [], requests: [], responses: [], nodes: [], keys: [], storageReads: [], lifecycle: [], burns: [], mnemonics: [], deletedDirectories: [], deletedKeys: [] };
+  const native = { refreshes: 0, invoices: [], failedTransfers: [], createdUtxos: [], requests: [], responses: [], nodes: [], keys: [], storageReads: [], lifecycle: [], burns: [], mnemonics: [], deletedDirectories: [], deletedKeys: [] };
   const storage = new Map(options.savedNetwork ? [['utexo-demo-wallet-network-v1', options.savedNetwork]] : []);
   const savedKeys = options.savedKeys ?? new Map(options.newRgbKeys ? [] : ['utexo', 'regtest'].map(network =>
     [`utexo-demo-wallet-v1-RGB_L1-${network}-default-taproot`, 'saved-rgb-mnemonic']));
@@ -254,6 +254,7 @@ function nativeWalletFixture(initError, options = {}) {
           return { txid: 'ab'.repeat(32), batchTransferIdx: 3 };
         }
         async getBtcBalance() { return btc; }
+        async createUtxos(params) { native.createdUtxos.push({ ...params }); return (await options.createUtxos?.(params)) ?? 4; }
         async listAssets() {
           if (options.readError?.(this.network)) throw new Error('Indexer unavailable');
           return { bfa: [{ assetId: 'rgb:test', ticker: 'TEST', name: 'Test asset', precision: options.precision ?? 0,
@@ -261,12 +262,14 @@ function nativeWalletFixture(initError, options = {}) {
             nia: [{ assetId: 'rgb:nia', name: 'NIA test', precision: 0, balance: { spendable: 2, settled: 2, future: 2 } }], uda: null };
         }
         async listTransfers(assetId) {
+          if (options.transfers) return options.transfers(assetId);
           if (this.protocol === 'RGB_L1' && assetId === undefined) return [{ idx: 1, createdAt: 100 }, { idx: 2, createdAt: 200 }, { idx: 3, createdAt: 300, kind: 'ReceiveBlind', status: 'WaitingCounterparty' }];
           assert.ok(['rgb:test', 'rgb:nia'].includes(assetId), 'RLN requires a transfer filter');
           if (assetId === 'rgb:nia') return [];
           return [{ idx: 1, createdAt: 100 }, { idx: 2, createdAt: 200 }];
         }
         async refreshTransfers() { native.refreshes++; return (await options.refresh?.()) ?? { transfers: {} }; }
+        async failTransfers(params) { native.failedTransfers.push({ ...params }); return options.failTransfers?.(params) ?? false; }
         async refreshWallet() { await this.refreshTransfers(); }
         async blindReceive(params) {
           native.invoices.push(params);
@@ -459,6 +462,207 @@ test('a generated invoice is retained if the follow-up balance read fails', asyn
   assert.equal(native.invoices.length, 1);
   assert.equal(wallet.snapshot().invoice.invoice, 'rgb:test-invoice');
   assert.match(wallet.snapshot().error, /Invoice created; balances could not refresh/);
+});
+
+test('UTXO preparation explains existing allocations without silently creating an extra transaction', async () => {
+  const { load, native } = nativeWalletFixture(undefined, {
+    createUtxos: () => { throw new Error('AllocationsAlreadyAvailable'); },
+  });
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  await wallet.prepareReceive();
+  assert.deepEqual(native.createdUtxos, [{ upTo: true, num: 4, size: 1000, feeRate: 2 }]);
+  assert.equal(wallet.snapshot().error, '');
+  assert.match(wallet.snapshot().message, /Create 4 additional UTXOs/);
+  assert.equal(wallet.snapshot().prompt, null);
+});
+
+test('additional UTXOs require approval and bypass the existing allocation count exactly once', async (t) => {
+  const { load, native } = nativeWalletFixture(undefined, { createUtxos: () => 3 });
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  t.after(() => wallet.snapshot().prompt?.resolve(false));
+  const task = wallet.prepareReceive('additional');
+  const prompt = await waitForWalletPrompt(wallet);
+  assert.match(prompt.details, /Network: utexo/);
+  assert.match(prompt.details, /1,000 sats/);
+  assert.match(prompt.details, /2 sat\/vB/);
+  assert.equal(native.createdUtxos.length, 0);
+  await wallet.prepareReceive('additional');
+  await wallet.selectNetwork('regtest');
+  prompt.resolve(true);
+  await task;
+  assert.deepEqual(native.createdUtxos, [{ upTo: false, num: 4, size: 1000, feeRate: 2 }]);
+  assert.equal(wallet.snapshot().network, 'utexo');
+  assert.match(wallet.snapshot().message, /3 RGB UTXOs created/);
+});
+
+test('rejected or stale UTXO approval never spends BTC', async (t) => {
+  for (const stale of [false, true]) {
+    const { load, native } = nativeWalletFixture();
+    const wallet = load();
+    await wallet.start();
+    t.after(() => wallet.snapshot().prompt?.resolve(false));
+    const task = wallet.prepareReceive('additional');
+    const prompt = await waitForWalletPrompt(wallet);
+    if (stale) wallet.generation++;
+    prompt.resolve(stale);
+    await task;
+    assert.equal(native.createdUtxos.length, 0);
+    if (stale) assert.match(wallet.snapshot().error, /Wallet changed/);
+    else assert.equal(wallet.snapshot().message, 'UTXO creation cancelled.');
+  }
+});
+
+test('UTXO creation preserves broadcast success if balances fail and never hides unrelated failures', async () => {
+  let created = false;
+  const { load, native } = nativeWalletFixture(undefined, {
+    createUtxos: () => { created = true; return 2; }, readError: () => created,
+  });
+  const wallet = load();
+  await wallet.start();
+  await wallet.prepareReceive();
+  assert.equal(native.createdUtxos.length, 1);
+  assert.match(wallet.snapshot().message, /2 RGB UTXOs created/);
+  assert.match(wallet.snapshot().error, /UTXOs created; balances could not refresh/);
+  const broken = nativeWalletFixture(undefined, { createUtxos: () => { throw new Error('InsufficientBitcoins'); } });
+  const other = broken.load();
+  await other.start();
+  await other.prepareReceive();
+  assert.equal(other.snapshot().error, 'InsufficientBitcoins');
+  assert.equal(broken.native.createdUtxos.length, 1);
+});
+
+const pendingInvoice = {
+  idx: 11, batchTransferIdx: 42, createdAt: 100, kind: 'ReceiveBlind', status: 'WaitingCounterparty',
+  invoiceString: 'rgb:test-invoice', recipientId: 'blinded-receive',
+};
+
+test('cancelling an invoice fails only its batch after approval and refreshes the released balance', async (t) => {
+  for (const knownAsset of [false, true]) {
+    let records = [{ ...pendingInvoice }, { ...pendingInvoice, idx: 12, batchTransferIdx: 43 }];
+    const { load, native } = nativeWalletFixture(undefined, {
+      transfers: assetId => assetId === undefined || (knownAsset && assetId === 'rgb:test') ? records : [],
+      available: () => records[0].status === 'Failed' ? 5 : 0,
+      failTransfers: ({ batchTransferIdx }) => {
+        records = records.map(record => record.batchTransferIdx === batchTransferIdx ? { ...record, status: 'Failed' } : record);
+        return true;
+      },
+    });
+    const wallet = load('RGB_L1');
+    await wallet.start();
+    await wallet.generateInvoice({ amount: '', durationMinutes: '180' });
+    t.after(() => wallet.snapshot().prompt?.resolve(false));
+    assert.equal(wallet.snapshot().assets[0].balance.spendable, 0);
+    const task = wallet.cancelInvoice(11);
+    const prompt = await waitForWalletPrompt(wallet);
+    assert.equal(prompt.title, 'Cancel receive invoice?');
+    assert.match(prompt.details, /Invoice #11/);
+    assert.equal(native.failedTransfers.length, 0);
+    await wallet.selectNetwork('regtest');
+    await wallet.cancelInvoice(12); // Double tap must not cancel another invoice.
+    assert.equal(wallet.snapshot().network, 'utexo');
+    prompt.resolve(true);
+    await task;
+    assert.equal(JSON.stringify(native.failedTransfers), JSON.stringify([{ batchTransferIdx: 42, noAssetOnly: !knownAsset, skipSync: false }]));
+    assert.equal(wallet.snapshot().transfers.find(transfer => transfer.idx === 11).status, 'Failed');
+    assert.equal(wallet.snapshot().transfers.find(transfer => transfer.idx === 12).status, 'WaitingCounterparty');
+    assert.equal(wallet.snapshot().invoice, null);
+    assert.equal(wallet.snapshot().assets[0].balance.spendable, 5);
+    assert.match(wallet.snapshot().message, /Invoice #11 cancelled/);
+    assert.equal(wallet.snapshot().error, '');
+    assert.equal(wallet.snapshot().busy, false);
+  }
+});
+
+test('invoice cancellation rejects sends, burns, advanced receives and missing or shared batch identifiers', async () => {
+  for (const invalid of [
+    { kind: 'Send' }, { kind: 'Burn' }, { status: 'Settled' }, { status: 'Failed' },
+    { status: 'WaitingConfirmations' }, { status: 'WaitingBroadcast' }, { txid: 'abc' },
+    { batchTransferIdx: undefined }, { batchTransferIdx: 0 }, { batchTransferIdx: -1 },
+    { batchTransferIdx: 1.5 }, { batchTransferIdx: 0x80000000 },
+    { sharedBatch: true },
+  ]) {
+    const records = [{ ...pendingInvoice, ...invalid }];
+    if (invalid.sharedBatch) records.push({ ...pendingInvoice, idx: 12 });
+    const { load, native } = nativeWalletFixture(undefined, { transfers: assetId => assetId ? [] : records });
+    const wallet = load('RGB_L1');
+    await wallet.start();
+    await wallet.cancelInvoice(11);
+    assert.ok(wallet.snapshot().error, JSON.stringify(invalid));
+    assert.equal(wallet.snapshot().prompt, null);
+    assert.equal(native.failedTransfers.length, 0);
+  }
+});
+
+test('invoice cancellation respects rejection and rechecks transfer and wallet state after approval', async (t) => {
+  for (const change of ['reject', 'progress', 'batch', 'wallet']) {
+    let record = { ...pendingInvoice };
+    const { load, native } = nativeWalletFixture(undefined, { transfers: assetId => assetId ? [] : [record] });
+    const wallet = load('RGB_L1');
+    await wallet.start();
+    t.after(() => wallet.snapshot().prompt?.resolve(false));
+    const task = wallet.cancelInvoice(11);
+    const prompt = await waitForWalletPrompt(wallet);
+    if (change === 'progress') record = { ...record, status: 'WaitingConfirmations', txid: 'abc' };
+    if (change === 'batch') record = { ...record, batchTransferIdx: 99 };
+    if (change === 'wallet') wallet.generation++;
+    prompt.resolve(change !== 'reject');
+    await task;
+    assert.equal(native.failedTransfers.length, 0);
+    if (change === 'reject') assert.equal(wallet.snapshot().message, 'Invoice kept active.');
+    else assert.ok(wallet.snapshot().error);
+    if (change === 'progress') assert.equal(wallet.snapshot().transfers[0].status, 'WaitingConfirmations');
+  }
+});
+
+test('native refresh or refusal is never reported as a cancelled invoice', async (t) => {
+  for (const outcome of ['unchanged', 'advanced', 'refused']) {
+    let record = { ...pendingInvoice };
+    const { load, native } = nativeWalletFixture(undefined, {
+      transfers: assetId => assetId ? [] : [record],
+      failTransfers: () => {
+        if (outcome === 'unchanged') return false;
+        record = { ...record, status: 'WaitingBroadcast' };
+        if (outcome === 'refused') throw new Error('Cannot fail transfer');
+        return true; // Native refreshed the receive instead of failing it.
+      },
+    });
+    const wallet = load('RGB_L1');
+    await wallet.start();
+    await wallet.generateInvoice({ amount: '', durationMinutes: '180' });
+    t.after(() => wallet.snapshot().prompt?.resolve(false));
+    const task = wallet.cancelInvoice(11);
+    (await waitForWalletPrompt(wallet)).resolve(true);
+    await task;
+    assert.equal(native.failedTransfers.length, 1);
+    assert.match(wallet.snapshot().message, /was not cancelled/);
+    assert.equal(wallet.snapshot().transfers[0].status, record.status);
+    assert.ok(wallet.snapshot().invoice);
+    if (outcome === 'refused') assert.match(wallet.snapshot().error, /Cannot fail transfer/);
+  }
+});
+
+test('confirmed invoice cancellation stays visible and cannot be copied when balances fail to refresh', async (t) => {
+  let record = { ...pendingInvoice };
+  const { load, native } = nativeWalletFixture(undefined, {
+    transfers: assetId => assetId ? [] : [record],
+    readError: () => record.status === 'Failed',
+    failTransfers: () => { record = { ...record, status: 'Failed' }; return true; },
+  });
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  await wallet.generateInvoice({ amount: '', durationMinutes: '180' });
+  t.after(() => wallet.snapshot().prompt?.resolve(false));
+  const task = wallet.cancelInvoice(11);
+  (await waitForWalletPrompt(wallet)).resolve(true);
+  await task;
+  assert.equal(wallet.snapshot().invoice, null);
+  assert.equal(wallet.snapshot().transfers[0].status, 'Failed');
+  assert.match(wallet.snapshot().message, /Invoice #11 cancelled/);
+  assert.match(wallet.snapshot().error, /Invoice cancelled; balances could not refresh/);
+  await wallet.cancelInvoice(11);
+  assert.equal(native.failedTransfers.length, 1);
 });
 
 const context = () => ({ origin: 'https://test.example', topic: 'test-topic', network: 'utexo',
@@ -712,10 +916,10 @@ const localBurnForm = {
   assetId: 'rgb:test', amount: '2', payoutChainId: 'eip155:42161',
   payoutAddress: '0x' + '12'.repeat(20),
 };
-async function waitForBurnPrompt(wallet) {
+async function waitForWalletPrompt(wallet) {
   for (let attempt = 0; attempt < 100 && !wallet.snapshot().prompt; attempt++)
     await new Promise(resolve => setImmediate(resolve));
-  assert.ok(wallet.snapshot().prompt, wallet.snapshot().error || 'Expected burn confirmation');
+  assert.ok(wallet.snapshot().prompt, wallet.snapshot().error || 'Expected wallet confirmation');
   return wallet.snapshot().prompt;
 }
 
@@ -730,7 +934,7 @@ test('local burn converts decimal amounts exactly and persists without a website
   const form = { ...localBurnForm, amount: '1.250001', payoutChainId: 'eip155:1' };
   const task = wallet.burnAsset(form);
   form.payoutAddress = '0x' + '34'.repeat(20);
-  const prompt = await waitForBurnPrompt(wallet);
+  const prompt = await waitForWalletPrompt(wallet);
   assert.equal(native.burns.length, 0);
   assert.equal(prompt.origin, 'On this device');
   assert.match(prompt.details, /1\.250001 \(1250001 base units\)/);
@@ -765,7 +969,7 @@ test('local burn to Tron keeps the Base58Check address and encodes the account b
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const tronAddress = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
   const task = wallet.burnAsset({ ...localBurnForm, payoutChainId: 'tron:728126428', payoutAddress: tronAddress });
-  const prompt = await waitForBurnPrompt(wallet);
+  const prompt = await waitForWalletPrompt(wallet);
   assert.match(prompt.details, /Payout network: Tron \(tron:728126428\)/);
   assert.ok(prompt.details.includes(tronAddress));
   prompt.resolve(true);
@@ -780,7 +984,7 @@ test('rejecting a local burn neither invokes native burn nor creates a journal e
   const wallet = load();
   await wallet.start();
   const task = wallet.burnAsset(localBurnForm);
-  (await waitForBurnPrompt(wallet)).resolve(false);
+  (await waitForWalletPrompt(wallet)).resolve(false);
   assert.equal(await task, undefined);
   assert.equal(native.burns.length, 0);
   assert.equal(wallet.snapshot().burns.length, 0);
@@ -814,7 +1018,7 @@ test('local burn rechecks available balance after approval', async (t) => {
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
-  const prompt = await waitForBurnPrompt(wallet);
+  const prompt = await waitForWalletPrompt(wallet);
   available = 1;
   prompt.resolve(true);
   await task;
@@ -829,7 +1033,7 @@ test('local burn cannot execute after its wallet context changes during approval
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
-  const prompt = await waitForBurnPrompt(wallet);
+  const prompt = await waitForWalletPrompt(wallet);
   wallet.generation++;
   prompt.resolve(true);
   await task;
@@ -844,7 +1048,7 @@ test('an ambiguous local native burn blocks another burn, including after reopen
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
-  (await waitForBurnPrompt(wallet)).resolve(true);
+  (await waitForWalletPrompt(wallet)).resolve(true);
   await task;
   assert.equal(native.burns.length, 1);
   assert.equal(wallet.snapshot().burns[0].state, 'pending');
@@ -870,7 +1074,7 @@ test('refresh saves a known local burn result after storage failure without burn
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
-  (await waitForBurnPrompt(wallet)).resolve(true);
+  (await waitForWalletPrompt(wallet)).resolve(true);
   await task;
   assert.equal(wallet.snapshot().burns[0].state, 'pending');
   assert.match(wallet.snapshot().error, /Storage is unavailable/);
@@ -890,7 +1094,7 @@ test('local burn retains its result when the subsequent balance refresh fails', 
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
-  (await waitForBurnPrompt(wallet)).resolve(true);
+  (await waitForWalletPrompt(wallet)).resolve(true);
   const result = await task;
   assert.equal(result.state, 'complete');
   assert.equal(wallet.snapshot().burns[0].state, 'complete');
@@ -1248,7 +1452,7 @@ test('local RGB Lib burns commit V1 destinations and recover from their separate
   t.after(() => rgb.snapshot().prompt?.resolve(false));
   const form = { ...localBurnForm, payoutChainId: 'eip155:42161' };
   const task = rgb.burnAsset(form);
-  const prompt = await waitForBurnPrompt(rgb);
+  const prompt = await waitForWalletPrompt(rgb);
   assert.ok(prompt.details.includes(form.payoutAddress));
   assert.match(prompt.details, /Arbitrum/);
   prompt.resolve(true);
