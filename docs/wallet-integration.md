@@ -205,9 +205,8 @@ Android resolves rgb-lib (`com.utexo:rgb-lib-bfa-android`) from Maven Central.
 On iOS, the SDK builds `ios/RgbLibBindings` from the pinned rgb-lib-swift
 release during its `postinstall`; in the linked SDK checkout run
 `npm run bindings:rgb-lib` once. `app.json` (`expo-build-properties`) sets
-iOS 16.0, which RGB_L1 needs, and a `pickFirst` rule for `libc++_shared.so`,
-which the rgb-lib AAR ships next to React Native's copy. Run `npx expo prebuild`
-after changing these options; `ios/` and `android/` are generated.
+iOS 16.0, which RGB_L1 needs. Run `npx expo prebuild` after changing these
+options; `ios/` and `android/` are generated.
 Rebuild the SDK after editing its TypeScript and rebuild the app after native
 changes.
 
