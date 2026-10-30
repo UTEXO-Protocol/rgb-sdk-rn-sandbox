@@ -1,11 +1,14 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AppColors } from '@/constants/theme';
+import { demoWallet, rgbLibWallet } from '@/utils/wallet';
 
 export default function TabLayout() {
+  const rln = useSyncExternalStore(demoWallet.subscribe, demoWallet.snapshot, demoWallet.snapshot);
+  const rgb = useSyncExternalStore(rgbLibWallet.subscribe, rgbLibWallet.snapshot, rgbLibWallet.snapshot);
   return (
     <Tabs
       screenOptions={{
@@ -49,7 +52,16 @@ export default function TabLayout() {
         name="wallet"
         options={{
           title: 'Wallet',
+          tabBarBadge: rln.prompt ? '!' : undefined,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="link" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="rgb-lib"
+        options={{
+          title: 'RGB Lib',
+          tabBarBadge: rgb.prompt ? '!' : undefined,
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="wallet.bifold.fill" color={color} />,
         }}
       />
       <Tabs.Screen

@@ -23,6 +23,13 @@ dApp → WalletConnect → WebRGB adapter → SDK WebRgbProvider → UTEXOWallet
 The user can also refresh balances, prepare receive UTXOs, generate and copy an
 invoice, and burn BFA assets directly in the Wallet tab without a website session.
 
+Receive invoices default to at least **3 hours** (180 minutes) in both wallet
+tabs. The local form accepts 180–43,200 minutes. WalletConnect requests with an
+omitted or shorter positive duration use 3 hours; longer valid durations are
+preserved. The approval prompt shows the effective duration. This leaves time
+for bridge preparation before its required one-hour mint window. Existing
+invoices keep their original expiry; generate a new invoice after updating.
+
 ## Burn directly in the wallet
 
 1. Open **Wallet → Burn**, or tap **Burn** on a BFA asset in **Assets**.
@@ -61,9 +68,13 @@ WebRGB argument and result types come from `@utexo/webrgb`. The SDK provider is
 imported from `@utexo/rgb-sdk-rn/webrgb`; the app does not implement another
 WebRGB protocol mapping.
 
-The demo uses the published `@utexo/rgb-sdk-rn@1.0.0-beta.37`.
-Run `npm install --install-strategy=nested` after updating the dependency.
-Metro and Node tests use its published entry points. After an SDK update,
+The demo currently uses the local `../rgb-sdk-rn` checkout (the `feat/rgb-lib-bfa`
+branch, initially reviewed at `56e3624`, plus the local podspec packaging fix). The package keeps version
+`1.0.0-beta.39`, but the published beta.39 does not include this new backend.
+`package.json` uses `file:../rgb-sdk-rn`; npm links the adjacent checkout,
+including its already-installed native bindings. Metro watches that checkout;
+TypeScript, autolinking and Node tests resolve the same SDK. Run `npm install`
+in this demo. The prepared local checkout is required on other machines. After an SDK update,
 regenerate the native projects and rebuild the app with `npm run ios` or
 `npm run android`.
 
@@ -109,11 +120,95 @@ The website must request the same network. For the bridge frontend set
 stack; restart Vite after changing its environment and reconnect the website.
 
 WebRGB and its WalletConnect adapter use the published npm packages
-`@utexo/webrgb@^0.1.2` and `@utexo/webrgb-walletconnect@^0.1.2`.
-The SDK pins RLN `0.16.0-beta.3`. Install with `npm install --install-strategy=nested`;
+`@utexo/webrgb@^0.1.3` and `@utexo/webrgb-walletconnect@^0.1.3`.
+The SDK pins RLN `0.17.0-beta.3`. Install with `npm install --install-strategy=nested`;
 on macOS the SDK downloads the iOS bindings during installation, and Android
 resolves its bindings through Gradle. Follow the native build instructions in
 the main README after installing.
+
+## Separate RGB Lib tab
+
+**Wallet** continues to use `new UTEXOWallet(params, signer)` (`RGB_LN`), with
+its existing SecureStore key, directory, network preference, WalletConnect
+prefix and burn journal. Existing credentials are neither replaced nor migrated.
+
+**RGB Lib** creates `new UTEXOWallet({ protocol: 'RGB_L1', params, keys })`.
+It provides balances, asset and pending-transfer history, receive invoices,
+receive UTXO preparation, refresh and WalletConnect. It has separate keys,
+a `wallet-connect-v1/RGB_L1/<network>/default/taproot` directory, network
+preference and WalletConnect storage. Both services can remain open: changing
+one tab's network does not stop or disconnect the other. An approval badge
+indicates a pending request on an inactive tab; only the focused tab shows its
+confirmation dialog.
+
+The shared UI is `components/wallet-screen.tsx`; each route passes its own
+service. `utils/wallet/profiles.ts` selects the opener and persistence namespaces.
+`utils/wallet/rgb-lib-node.ts` persists the mnemonic before native initialization
+and reads it through `CallbackRgbLibKeyProvider`. RGB Lib account identifiers
+use the `RGB-L1-` prefix (CAIP account characters do not allow underscores).
+Failed native cleanup retains the handle and must succeed before another open.
+
+Configure a deployment compatible with the pinned rgb-lib release explicitly:
+
+```dotenv
+EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL=https://esplora-api.utexo.com
+EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT=rpcs://rgb-proxy.dev.utexo.com/json-rpc
+# BFA mint validation requires an RPC for the source EVM chain:
+EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS={"42161":"https://arb1.arbitrum.io/rpc"}
+
+# Alternatively, configure the Local regtest selection:
+EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL=tcp://your-regtest-host:50001
+EXPO_PUBLIC_RGB_LIB_REGTEST_PROXY_ENDPOINT=rpc://your-compatible-proxy:3000/json-rpc
+# EXPO_PUBLIC_RGB_LIB_REGTEST_EVM_RPC_URLS={"31337":"http://your-regtest-evm:8545"}
+```
+
+For this local setup, **Utexo signet** uses the indexer and dev proxy above,
+configured separately in `.env.local`. On 2026-10-21 the indexer responded
+successfully, and the dev proxy's `server.info` reported `protocol_version: "1.0"`
+and server version `0.3.0`. This matches the protocol required by the pinned
+rgb-lib revision. This check confirms the protocol version; a funded transfer
+has not been verified. The RLN proxy at `rgb-proxy.utexo.com` reports protocol
+`0.2` and remains confined to Wallet. Regtest and EVM URLs above are placeholders.
+
+RLN endpoints and its unkeyed `ethRpcUrl` are never automatically reused.
+For a BFA mint from Arbitrum, RGB Lib needs the explicit `42161` entry above.
+Without it, the native log reports `Cannot resolve mint events: no EVM RPC URL
+configured for chain ID 42161, will retry`; the transfer remains pending and
+the asset is not added. After changing this configuration, reload the app and
+reopen RGB Lib before refreshing the existing transfer. Refresh reports pending
+transfers and surfaces per-batch failures returned by the SDK.
+The RLN mock faucet tools are also confined to Wallet; fund RGB Lib through its
+configured Bitcoin network. Missing configuration appears on the tab with the
+specific environment variable names. Restart Metro after setting them. The website must support `RGB_L1` on the same network; the deep
+link is `myapp://rgb-lib?uri=…`. WebRGB advertises the SDK's on-chain methods.
+RGB Lib supports local burns and WebRGB `burnAsset` / `getConsignment` when
+native burn and proof export are available. Payout routes in `utils/wallet/profiles.ts`
+match the bridge's V1 destination contract: Arbitrum, Ethereum, Polygon, Plasma and
+Tron on utexo; local EVM 31337 on regtest. The SDK commits the destination hash
+in the proof and saves the destination in the burn journal for recovery. An existing
+local burn can be shared through the bridge's Existing burn → From wallet flow;
+proof sharing requires approval. Message signing remains unavailable for RGB Lib.
+RLN burn behavior is unchanged. After updating, fully reload the demo and reconnect
+the WalletConnect session so it negotiates burn/proof methods.
+
+Install the local dependency and rebuild (Expo Go cannot load native bindings):
+
+```sh
+# From this demo:
+npm install
+npm run ios:pod-install
+npm run ios
+# Or npm run android
+```
+
+Android resolves rgb-lib (`com.utexo:rgb-lib-bfa-android`) from Maven Central.
+On iOS, the SDK builds `ios/RgbLibBindings` from the pinned rgb-lib-swift
+release during its `postinstall`; in the linked SDK checkout run
+`npm run bindings:rgb-lib` once. `app.json` (`expo-build-properties`) sets
+iOS 16.0, which RGB_L1 needs. Run `npx expo prebuild` after changing these
+options; `ios/` and `android/` are generated.
+Rebuild the SDK after editing its TypeScript and rebuild the app after native
+changes.
 
 ## Recovery and checks
 
@@ -130,3 +225,17 @@ npx tsc --noEmit
 These tests cover wallet lifecycle, request handling and persistence, including
 the real adapter and SDK provider with a simulated wallet backend. Native calls
 are disabled in Node tests; live relay and device testing are separate.
+
+
+Local dual-backend verification covers the existing RLN flows plus profile
+isolation, pending unknown-asset receives, failed cleanup/retry, explicit RGB Lib
+configuration and WebRGB capability gating. Native verification also checks
+that the final iOS app embeds both `RGBLib.framework` and `rgb_libFFI.framework`.
+The SDK podspec must not use `exclude_files = "ios/RgbLibBindings/**/*"`:
+CocoaPods applies that exclusion to vendored frameworks too and silently builds
+the unavailable-backend fallback. The local fix limits source/header globs to
+files directly under `ios/` instead.
+
+The SDK's native iOS smoke test checks coexistence with RLN, profile locks,
+invoices/history, reopening and encrypted backup/restore on an isolated
+simulator. It does not validate a live deployment or a funded RGB transfer.

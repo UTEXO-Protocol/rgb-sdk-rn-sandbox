@@ -68,7 +68,7 @@ export function useScidReproSignetFlow() {
   const [rgbAtLsp, setRgbAtLsp] = useState<boolean | null>(null);
   const [delivered, setDelivered] = useState<boolean | null>(null);
 
-  const walletRef = useRef<UTEXOWallet | null>(null);
+  const walletRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef = useRef(false);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -94,7 +94,7 @@ export function useScidReproSignetFlow() {
 
     // Record the receiver's channels to the LSP (fall back to all channels when
     // the LSP pubkey is unknown — a fresh wallet only has channels to the LSP).
-    const recordChannels = async (w: UTEXOWallet, lspPubkey: string) => {
+    const recordChannels = async (w: UTEXOWallet<'RGB_LN'>, lspPubkey: string) => {
       let channels: any[] = [];
       try { channels = (await w.listChannels()) as any[]; } catch { /* transient */ }
       const toLsp = lspPubkey
@@ -118,7 +118,7 @@ export function useScidReproSignetFlow() {
     };
 
     // Full asset-balance breakdown (settled / owned outbound / receivable inbound).
-    const snapBal = async (w: UTEXOWallet, label: string) => {
+    const snapBal = async (w: UTEXOWallet<'RGB_LN'>, label: string) => {
       const b = await w.getAssetBalance(ASSET_ID).catch(() => null) as any;
       addLog(`${label} balance: settled=${b?.settled ?? 0} future=${b?.future ?? 0} `
         + `spendable=${b?.spendable ?? 0} offchainOutbound=${b?.offchainOutbound ?? 0} `
@@ -127,7 +127,7 @@ export function useScidReproSignetFlow() {
     };
 
     // Dump every channel with all its fields (capacity, balances, asset amounts, status).
-    const dumpChannels = async (w: UTEXOWallet, label: string) => {
+    const dumpChannels = async (w: UTEXOWallet<'RGB_LN'>, label: string) => {
       let chans: any[] = [];
       try { chans = (await w.listChannels()) as any[]; } catch { /* transient */ }
       addLog(`${label} listChannels (${chans.length}):`, 'info');
@@ -136,7 +136,7 @@ export function useScidReproSignetFlow() {
     };
 
     // Poll a wallet until settled BTC > 0 (funding confirmed on signet).
-    const pollFunded = async (w: UTEXOWallet): Promise<void> => {
+    const pollFunded = async (w: UTEXOWallet<'RGB_LN'>): Promise<void> => {
       const deadline = Date.now() + FUND_TIMEOUT_MS;
       while (Date.now() < deadline) {
         if (abortRef.current) throw new Error('Cancelled');
@@ -153,7 +153,7 @@ export function useScidReproSignetFlow() {
     };
 
     // Poll until createUtxos confirms (spendable appears).
-    const pollUtxos = async (w: UTEXOWallet): Promise<void> => {
+    const pollUtxos = async (w: UTEXOWallet<'RGB_LN'>): Promise<void> => {
       const deadline = Date.now() + FUND_TIMEOUT_MS;
       while (Date.now() < deadline) {
         if (abortRef.current) throw new Error('Cancelled');

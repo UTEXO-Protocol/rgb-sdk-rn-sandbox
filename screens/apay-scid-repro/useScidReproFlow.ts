@@ -81,7 +81,7 @@ export function useScidReproFlow() {
   const [rgbAtLsp, setRgbAtLsp] = useState<boolean | null>(null);
   const [delivered, setDelivered] = useState<boolean | null>(null);
 
-  const walletRef = useRef<UTEXOWallet | null>(null);
+  const walletRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef = useRef(false);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -108,7 +108,7 @@ export function useScidReproFlow() {
     const startedAt = Date.now();
     const receiverPubkey = { value: '' };
 
-    const recordChannels = async (w: UTEXOWallet, lspPeerPubkey: string) => {
+    const recordChannels = async (w: UTEXOWallet<'RGB_LN'>, lspPeerPubkey: string) => {
       let channels: any[] = [];
       try { channels = (await w.listChannels()) as any[]; } catch { /* transient */ }
       const toLsp = channels.filter((c: any) => (c.peerPubkey ?? c.peer_pubkey) === lspPeerPubkey);

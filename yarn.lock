@@ -2558,10 +2558,10 @@
     "@scure/bip32" "^2.0.1"
     "@scure/bip39" "^2.0.1"
 
-"@utexo/rgb-sdk-rn@1.0.0-beta.39":
-  version "1.0.0-beta.39"
-  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.39.tgz"
-  integrity sha512-lnVFUvCo/BZYtZMSe5jINE96Ds8l+xu7ZlcwKAMMS3+PLRkrpJ0NcdHBUMaAeK0ra862oZWlFA1KDODHAxahpA==
+"@utexo/rgb-sdk-rn@1.0.0-beta.40":
+  version "1.0.0-beta.40"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.40.tgz"
+  integrity sha512-jHRCapvbXgojaBVXNfR9VZwQMYYsRJoB15+Zf9GBqLCkNGYZ+MWyJymPfs6SR5hBlwdSeOULOqD57wavFmxXyQ==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "3.0.0"

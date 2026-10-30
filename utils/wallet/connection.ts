@@ -9,7 +9,13 @@ import {
 import { isRgbSession, parseWalletConnectUri, sessionOrigin } from './connection-protocol';
 import type { DemoWalletState } from './types';
 type WalletClient = Awaited<ReturnType<typeof WalletKit.init>>;
+export interface ConnectionProfile {
+  storagePrefix: string;
+  name: string;
+  redirect: string;
+}
 interface Host {
+  profile(): ConnectionProfile;
   network(): string;
   account(): string;
   methods(): readonly string[];
@@ -45,15 +51,15 @@ export class WalletConnection {
     if (!projectId || !/^[a-fA-F0-9]{32}$/.test(projectId))
       throw new Error('Set EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID and restart Metro.');
     // Keep the storage prefix stable so sessions survive app restarts.
-    this.core ??= new Core({ projectId, customStoragePrefix: 'utexo-demo-wallet-webrgb-v2' });
+    this.core ??= new Core({ projectId, customStoragePrefix: this.host.profile().storagePrefix });
     this.clientPromise = WalletKit.init({
       core: this.core,
       metadata: {
-        name: 'UTEXO Demo Wallet',
+        name: this.host.profile().name,
         description: 'RGB wallet demo',
         url: 'https://utexo.com',
         icons: [],
-        redirect: { native: 'myapp://wallet' },
+        redirect: { native: this.host.profile().redirect },
       },
     })
       .then((client) => {
@@ -103,7 +109,7 @@ export class WalletConnection {
   }
 
   /** Detach providers immediately, then remove persisted RGB sessions before changing nodes. */
-  async reset() {
+  async reset(message = 'Wallet network changed. Reconnect the website.') {
     this.resetting = true;
     this.revision++;
     this.transport?.dispose();
@@ -119,7 +125,7 @@ export class WalletConnection {
           try {
             await client.disconnectSession({
               topic: session.topic,
-              reason: { code: 6000, message: 'Wallet network changed. Reconnect the website.' },
+              reason: { code: 6000, message },
             });
           } catch (error) {
             // Expiry/deletion may win the race; a session still in storage must not be restored later.

@@ -139,8 +139,8 @@ export function useApayFlow(options: UseApayFlowOptions = {}) {
   const [merchantOnline, setMerchantOnline] = useState(false);
   const [finalBalB, setFinalBalB] = useState<any>(null);
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef = useRef(false);
   const keepaliveActiveRef = useRef(false);
   /** Last-known size of the merchant's APay hash pool — drives auto-refill. */

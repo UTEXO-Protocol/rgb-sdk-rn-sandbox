@@ -130,7 +130,7 @@ export async function waitFor<T>(
 // ── Wallet boot ──────────────────────────────────────────────────────────────
 
 export interface BootedWallet {
-  wallet: UTEXOWallet;
+  wallet: UTEXOWallet<'RGB_LN'>;
   mnemonic: string;
   storageDirPath: string;
   storageDirUri: string;
@@ -212,7 +212,7 @@ export async function bootWallet(
 }
 
 /** An un-initialised instance — for the conformance capability probes only. */
-export function buildWalletSync(): UTEXOWallet {
+export function buildWalletSync(): UTEXOWallet<'RGB_LN'> {
   return new UTEXOWallet(
     {
       storageDirPath: '/tmp/e2e-conformance-sync',
@@ -228,7 +228,7 @@ export function buildWalletSync(): UTEXOWallet {
 // ── Scenario plumbing ────────────────────────────────────────────────────────
 
 export interface ScenarioContext {
-  wallet: UTEXOWallet;
+  wallet: UTEXOWallet<'RGB_LN'>;
   boot: BootedWallet;
   fx: E2EFixtures;
   /** Values scenarios hand to each other (assetId from C, ifaAssetId from D…). */

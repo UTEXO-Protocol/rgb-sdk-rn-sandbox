@@ -19,9 +19,9 @@ export async function runRlnVssFlow() {
   beginExclusiveFlow(flowName);
   const { results, addStep, failFlow } = createFlowResults();
 
-  let wallet: UTEXOWallet | null = null;
-  let nodeB: UTEXOWallet | null = null;
-  let walletRestored: UTEXOWallet | null = null;
+  let wallet: UTEXOWallet<'RGB_LN'> | null = null;
+  let nodeB: UTEXOWallet<'RGB_LN'> | null = null;
+  let walletRestored: UTEXOWallet<'RGB_LN'> | null = null;
 
   try {
     const { network, unlockParams } = buildRegtestConfig();
@@ -144,7 +144,7 @@ export async function runRlnVssFlow() {
     console.log('[vss] openChannel', openResp);
     await mine(6);
     await sleep(3000);
-    for (const [node, label] of [[wallet, 'nodeA'], [nodeB, 'nodeB']] as [UTEXOWallet, string][]) {
+    for (const [node, label] of [[wallet, 'nodeA'], [nodeB, 'nodeB']] as [UTEXOWallet<'RGB_LN'>, string][]) {
       const deadline = Date.now() + 120000;
       let channelUsable = false;
       while (Date.now() < deadline) {

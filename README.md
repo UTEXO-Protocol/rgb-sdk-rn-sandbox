@@ -1,6 +1,7 @@
 # rgb-sdk-rn Demo
 
-For the **Wallet** tab and mobile dApp connection flow, see
+For the **Wallet** (RLN) and **RGB Lib** (on-chain) tabs, local SDK/native
+bindings setup and mobile dApp connections, see
 [Wallet integration](docs/wallet-integration.md).
 
 End-to-end demo app for [`@utexo/rgb-sdk-rn`](https://github.com/UTEXO-Protocol/rgb-sdk-rn). Runs four live integration flows on the **Flows** tab against a local regtest stack, a **Virtual Channel** flow (regtest and UTEXO signet) demonstrating `trusted_no_broadcast` RGB Lightning channels, a guided **UTEXO 2-Node Flow** on the **Utexo** tab (regtest or UTEXO/signet), **LSP** flows demonstrating inbound RGB liquidity via a Liquidity Service Provider (regtest and UTEXO signet), and **Async Payment (APay)** flows demonstrating Lightning Address checkout with offline-capable receive.
@@ -121,7 +122,7 @@ EXPO_PUBLIC_UTEXO_BITCOIND_RPC_USERNAME=
 EXPO_PUBLIC_UTEXO_BITCOIND_RPC_PASSWORD=
 EXPO_PUBLIC_UTEXO_BITCOIND_RPC_HOST=
 EXPO_PUBLIC_UTEXO_BITCOIND_RPC_PORT=38332
-EXPO_PUBLIC_UTEXO_INDEXER_URL=https://esplora-api.utexo.com
+EXPO_PUBLIC_UTEXO_INDEXER_URL=https://dev.esplora-01.mint.utexo.com
 EXPO_PUBLIC_UTEXO_PROXY_ENDPOINT=rpcs://rgb-proxy.utexo.com/json-rpc
 ```
 

@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
-import { demoWallet, type DemoWalletState } from '@/utils/wallet';
+import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
 import { burnMaxAmount, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
 
-export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletState; initialAssetId?: string }) {
+export function WalletBurn({ state, wallet, initialAssetId = '' }: { state: DemoWalletState; wallet: DemoWalletService; initialAssetId?: string }) {
   const assets = state.assets.filter((asset) => asset.schema === 'BFA');
   const [assetId, setAssetId] = useState(initialAssetId || assets[0]?.assetId || '');
   const [amount, setAmount] = useState('');
@@ -17,8 +17,9 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
   const pending = state.burns.some((record) => record.state === 'pending');
   const unavailable = !state.ready || !state.burnAvailable || busy || pending;
   const form = { assetId, amount, payoutChainId: payoutChainIdFromInput(payoutChainId), payoutAddress };
+  const destinationRoutes = wallet.profile.burnDestinationRoutes?.(state.network);
   let validation = '';
-  try { prepareLocalBurn(form, asset, state.network); }
+  try { prepareLocalBurn(form, asset, state.network, destinationRoutes); }
   catch (error) { validation = error instanceof Error ? error.message : 'Check the burn details.'; }
   const latest = state.burns.filter((record) => record.metadata.origin === LOCAL_BURN_ORIGIN && record.state === 'complete').at(-1);
   const latestAsset = state.assets.find((item) => item.assetId === latest?.params.assetId);
@@ -26,7 +27,7 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
   return <View style={styles.group}>
     <Text style={styles.heading}>Burn for an EVM or Tron payout</Text>
     <Text style={styles.text}>Burn BFA tokens here, then use the saved proof on the bridge website to request your payout.</Text>
-    {!state.burnAvailable && <Text style={styles.warning}>Burn requires a compatible native build and Ethereum RPC configuration.</Text>}
+    {!state.burnAvailable && <Text style={styles.warning}>Burn requires native burn and proof export support. RLN also requires Ethereum RPC configuration.</Text>}
     {!assets.length && <Text style={styles.text}>No BFA assets in this wallet. Receive a bridge asset first.</Text>}
     {pending && <Text accessibilityRole="alert" style={styles.warning}>
       A burn is still processing or its outcome needs review. Check Activity and refresh the wallet before starting another burn.
@@ -61,7 +62,9 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
         placeholder="e.g. 1 or tron:728126428" placeholderTextColor={C.textTertiary}
         autoCapitalize="none" autoCorrect={false}
         editable={!unavailable} style={styles.input} />
-      <Text style={styles.hint}>Ethereum: 1 · Arbitrum One: 42161 · Tron: tron:728126428 (Shasta: tron:2494104990, Nile: tron:3448148188)</Text>
+      <Text style={styles.hint}>{destinationRoutes
+        ? destinationRoutes.map(({ chainId }) => `${payoutChainLabel(chainId)}: ${chainId.replace('eip155:', '')}`).join(' · ')
+        : 'Ethereum: 1 · Arbitrum One: 42161 · Tron: tron:728126428 (Shasta: tron:2494104990, Nile: tron:3448148188)'}</Text>
       <Text style={styles.label}>Payout address</Text>
       <TextInput accessibilityLabel="Payout address" value={payoutAddress} onChangeText={setPayoutAddress}
         placeholder="0x… or T…" placeholderTextColor={C.textTertiary} autoCapitalize="none" autoCorrect={false}
@@ -72,7 +75,7 @@ export function WalletBurn({ state, initialAssetId = '' }: { state: DemoWalletSt
         disabled={unavailable || !!validation} style={[styles.button, (unavailable || !!validation) && styles.disabled]}
         onPress={() => {
           setCopied('');
-          void demoWallet.burnAsset(form).then((record) => { if (record?.state === 'complete') setAmount(''); });
+          void wallet.burnAsset(form).then((record) => { if (record?.state === 'complete') setAmount(''); });
         }}>
         <Text style={styles.buttonText}>Review burn</Text>
       </Pressable>

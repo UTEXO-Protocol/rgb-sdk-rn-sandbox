@@ -1,22 +1,30 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BurnOperations, type UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { BurnOperations, type AnyUtexoWallet } from '@utexo/rgb-sdk-rn';
 import { WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk-rn/webrgb';
 import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
-import { buildDemoWalletConfig, isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
+import { isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
 import { mockFaucetEnabled, mockFaucetRequest } from '../mock-faucet';
 import { createDemoRgbProvider } from './provider';
+import { canCancelInvoice, MIN_INVOICE_DURATION_MINUTES } from './invoice';
 import { WalletConnection } from './connection';
-import { describeWalletConfiguration, openSavedWallet } from './node';
+import { rlnProfile, rgbLibProfile, type WalletProfile } from './profiles';
 import { createBurnStore } from './storage';
 import { assertBurnBalance, formatBurnAmount, payoutChainLabel, prepareLocalBurn, type LocalBurnInput } from './burn';
 import type { DemoWalletState, WalletAsset } from './types';
 
-const NETWORK_KEY = 'utexo-demo-wallet-network-v1';
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : 'Wallet operation failed';
 
-class DemoWalletService {
+export class DemoWalletService {
+  constructor(readonly profile: WalletProfile = rlnProfile) {
+    this.state = { ...this.state, protocol: profile.protocol };
+  }
+
+  describeConfiguration(network: DemoWalletNetwork) {
+    return this.profile.describe(network);
+  }
   private state: DemoWalletState = {
+    protocol: 'RGB_LN',
     ready: false,
     busy: false,
     address: '',
@@ -39,8 +47,9 @@ class DemoWalletService {
     burns: [],
   };
   private listeners = new Set<() => void>();
-  private wallet?: UTEXOWallet;
-  private wallets = new Map<DemoWalletNetwork, UTEXOWallet>();
+  private wallet?: AnyUtexoWallet;
+  private pendingCleanup?: AnyUtexoWallet;
+  private wallets = new Map<DemoWalletNetwork, AnyUtexoWallet>();
   private networkPromise?: Promise<void>;
   private changingNetwork = false;
   private pairing = false;
@@ -53,6 +62,7 @@ class DemoWalletService {
   );
   private operations?: BurnOperations;
   readonly connection = new WalletConnection({
+    profile: () => this.profile.connection,
     network: () => this.state.network,
     account: () => this.account,
     methods: () => this.supportedMethods(),
@@ -111,7 +121,7 @@ class DemoWalletService {
 
   /** Loading a preference does not open a node or contact any network. */
   initialize() {
-    this.networkPromise ??= AsyncStorage.getItem(NETWORK_KEY)
+    this.networkPromise ??= AsyncStorage.getItem(this.profile.networkKey)
       .then((saved) => {
         this.set({ network: isDemoWalletNetwork(saved) ? saved : 'utexo' });
       })
@@ -130,7 +140,7 @@ class DemoWalletService {
       await this.initialize();
       if (network === this.state.network || this.state.prompt || this.state.activeRequest || this.pairing) return;
       // Validate configuration before closing the current wallet.
-      buildDemoWalletConfig(network);
+      this.profile.describe(network);
       const reopen = this.state.ready;
       this.changingNetwork = true;
       this.generation++;
@@ -150,10 +160,55 @@ class DemoWalletService {
         burnAvailable: false, activeRequest: '', lastRequest: null, refreshing: false,
         message: 'Network selected. Open the wallet to connect.',
       });
-      await AsyncStorage.setItem(NETWORK_KEY, network);
+      await AsyncStorage.setItem(this.profile.networkKey, network);
       if (reopen) await this.open();
     } catch (error) {
       this.set({ error: messageOf(error), message: '' });
+    } finally {
+      this.changingNetwork = false;
+      this.set({ busy: false });
+    }
+  }
+
+  /** Delete only the profile/network that the user confirmed in the UI. */
+  async deleteWallet(network: DemoWalletNetwork) {
+    if (!this.profile.deleteSaved || this.state.busy || this.state.prompt || this.state.activeRequest || this.pairing) return;
+    this.set({ busy: true, error: '' });
+    try {
+      await this.initialize();
+      if (network !== this.state.network) throw new Error('Network changed. Confirm Delete wallet again.');
+      this.changingNetwork = true;
+      this.generation++;
+      this.set({ message: 'Deleting wallet…' });
+      await this.connection.reset('Wallet deleted. Connect again after opening a new wallet.');
+      await this.queue;
+      await this.operations?.retryPersistence();
+      // After this point even a failed close must leave the UI offline.
+      this.set({ ready: false });
+      if (this.pendingCleanup) {
+        await this.pendingCleanup.dispose();
+        this.pendingCleanup = undefined;
+      }
+      const wallet = this.wallet ?? this.wallets.get(network);
+      this.wallet = undefined;
+      this.wallets.delete(network);
+      this.operations = undefined;
+      this.account = '';
+      this.set({
+        address: '', sessions: [], invoice: null, initializationDetails: null,
+        btcBalance: null, assets: [], transfers: [], burns: [], updatedAt: null,
+        burnAvailable: false, activeRequest: '', lastRequest: null, refreshing: false,
+      });
+      if (wallet) {
+        // Retain ownership on failure; Open/Delete can retry closing safely.
+        this.pendingCleanup = wallet;
+        await wallet.dispose();
+        this.pendingCleanup = undefined;
+      }
+      await this.profile.deleteSaved(network);
+      this.set({ message: 'Wallet deleted. Open wallet will create a new wallet.' });
+    } catch (error) {
+      this.set({ error: `Could not delete wallet: ${messageOf(error)}`, message: '' });
     } finally {
       this.changingNetwork = false;
       this.set({ busy: false });
@@ -174,18 +229,21 @@ class DemoWalletService {
   private async open() {
     this.set({ message: 'Opening wallet…' });
     console.info('[Wallet] Opening saved wallet');
-    let wallet: UTEXOWallet | undefined;
+    let wallet: AnyUtexoWallet | undefined;
     const network = this.state.network;
     try {
-      const config = buildDemoWalletConfig(network);
-      this.set({ initializationDetails: describeWalletConfiguration(config) });
+      if (this.pendingCleanup) {
+        await this.pendingCleanup.dispose();
+        this.pendingCleanup = undefined;
+      }
+      this.set({ initializationDetails: this.profile.describe(network) });
       const stoppedWallet = this.wallets.get(network);
       this.wallets.delete(network);
-      const opened = await openSavedWallet(config, stoppedWallet);
+      const opened = await this.profile.open(network, stoppedWallet);
       wallet = opened.wallet;
       this.account = opened.account;
       this.operations = new BurnOperations(wallet, this.burnStore);
-      await this.operations.retryPersistence();
+      await this.operations?.retryPersistence();
       const capabilities = await wallet.getBfaCapabilities();
       const burns = await this.burnStore.readAll();
       this.wallet = wallet;
@@ -194,7 +252,7 @@ class DemoWalletService {
         ready: true,
         address: opened.address,
         burnAvailable:
-          capabilities.burn && capabilities.consignment && !!config.unlockParams.ethRpcUrl,
+          this.profile.burnEnabled(network) && capabilities.burn && capabilities.consignment,
         burns,
         message: 'Wallet ready. Fund the address, then prepare receive UTXOs.',
       });
@@ -206,7 +264,13 @@ class DemoWalletService {
       if (projectId) await this.connection.getClient();
     } catch (error) {
       if (!this.state.ready) {
-        await wallet?.dispose().catch(() => undefined);
+        if (wallet) {
+          try { await wallet.dispose(); }
+          catch {
+            this.pendingCleanup = wallet;
+            error = new Error(`${messageOf(error)} Wallet cleanup failed; retry Open wallet before continuing.`);
+          }
+        }
         this.wallets.delete(network);
         this.wallet = undefined;
         this.operations = undefined;
@@ -219,7 +283,7 @@ class DemoWalletService {
   /** Publish a consistent snapshot only after all native reads succeed. */
   private async readWalletData() {
     const wallet = this.wallet!;
-    // Native calls share the same RLN wallet; keep them sequential.
+    // Publish one consistent snapshot after sequential native reads.
     const btcBalance = await wallet.getBtcBalance();
     const groups = await wallet.listAssets();
     const assets: WalletAsset[] = Object.entries(groups).flatMap(([schema, group]) =>
@@ -242,6 +306,14 @@ class DemoWalletService {
         })),
       );
     }
+    if (wallet.protocol === 'RGB_L1') {
+      // The SDK omits asset IDs from unfiltered history; preserve the labels above
+      // and add unknown-asset receives that would otherwise disappear on restart.
+      const known = new Set(transfers.map((transfer) => transfer.idx));
+      transfers.push(...(await wallet.listTransfers())
+        .filter((transfer) => !known.has(transfer.idx))
+        .map((transfer) => ({ ...transfer, assetId: '' })));
+    }
     const burns = await this.burnStore.readAll();
     this.set({
       btcBalance,
@@ -253,7 +325,7 @@ class DemoWalletService {
   }
 
   /** Local actions use the same queue as dApp requests, so native work cannot overlap. */
-  private async localAction<T>(label: string, action: (wallet: UTEXOWallet) => Promise<T>) {
+  private async localAction<T>(label: string, action: (wallet: AnyUtexoWallet) => Promise<T>) {
     if (
       !this.wallet ||
       !this.state.ready ||
@@ -284,9 +356,23 @@ class DemoWalletService {
     return this.localAction('Refresh wallet', async (wallet) => {
       this.set({ refreshing: true });
       await this.operations?.retryPersistence();
-      await wallet.refreshWallet();
+      const result = await wallet.refreshTransfers();
       await this.readWalletData();
-      this.set({ message: 'Balances and transfers updated.' });
+      const failures = Object.entries(result.transfers).flatMap(([batchId, transfer]) =>
+        transfer.failure ? [`Batch ${batchId}: ${transfer.failure.name}: ${transfer.failure.message}`] : [],
+      );
+      if (failures.length) {
+        console.warn(`[Wallet ${this.profile.protocol}] Refresh incomplete: ${failures.length} transfer batch(es) failed.`);
+        this.set({ error: failures.join('\n'), message: 'Balances loaded, but some transfers could not refresh.' });
+        return;
+      }
+      const pending = this.state.transfers.filter((transfer) =>
+        ['Initiated', 'WaitingCounterparty', 'WaitingSafeHeight', 'WaitingBroadcast', 'WaitingConfirmations'].includes(transfer.status),
+      ).length;
+      this.set({ message: pending
+        ? `Balances updated. ${pending} transfer${pending === 1 ? '' : 's'} still pending; check Activity for status.`
+        : 'Balances and transfers updated.',
+      });
     });
   }
 
@@ -300,9 +386,10 @@ class DemoWalletService {
       if (
         !/^[1-9][0-9]*$/.test(input.durationMinutes) ||
         !Number.isSafeInteger(minutes) ||
+        minutes < MIN_INVOICE_DURATION_MINUTES ||
         minutes > 43200
       )
-        throw new Error('Invoice expiry must be between 1 and 43,200 minutes.');
+        throw new Error(`Invoice expiry must be between ${MIN_INVOICE_DURATION_MINUTES} and 43,200 minutes.`);
       const assetId = input.assetId || undefined;
       const asset = this.state.assets.find((item) => item.assetId === assetId);
       if (assetId && !asset)
@@ -330,18 +417,113 @@ class DemoWalletService {
     });
   }
 
-  async prepareReceive() {
-    return this.localAction('Prepare receive UTXOs', async (wallet) => {
-      await wallet.createUtxos({
-        upTo: true,
-        num: 4,
-        size: 1000,
-        feeRate: 2,
+  async cancelInvoice(transferIdx: number) {
+    return this.localAction('Cancel receive invoice', async (wallet) => {
+      const selected = this.state.transfers.find((transfer) => transfer.idx === transferIdx);
+      if (wallet.protocol !== 'RGB_L1' || !selected || !canCancelInvoice(selected))
+        throw new Error('Only a receive invoice still waiting for a counterparty can be cancelled.');
+      const batchTransferIdx = selected.batchTransferIdx!;
+      const generation = this.generation;
+      const assertCurrent = () => {
+        if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
+          throw new Error('Wallet changed. Review the invoice again.');
+      };
+      const readTarget = async () => {
+        const transfers = await wallet.listTransfers();
+        assertCurrent();
+        const target = transfers.find((transfer) =>
+          transfer.idx === transferIdx && transfer.batchTransferIdx === batchTransferIdx);
+        if (!target) throw new Error('Invoice no longer found. Refresh Activity.');
+        // Keep the actual status visible even if a later balance read fails.
+        this.set({ transfers: this.state.transfers.map((transfer) =>
+          transfer.idx === transferIdx ? { ...target, assetId: transfer.assetId } : transfer) });
+        return { target, transfers };
+      };
+      const assertCancellable = async () => {
+        const { target, transfers } = await readTarget();
+        if (!canCancelInvoice(target))
+          throw new Error(`Invoice cannot be cancelled: current status is ${target.status}.`);
+        // failTransfers targets a batch, not an individual transfer.
+        if (transfers.filter((transfer) => transfer.batchTransferIdx === batchTransferIdx).length !== 1)
+          throw new Error('This invoice shares a batch with other transfers and cannot be cancelled individually.');
+      };
+      await assertCancellable();
+      const approved = await this.confirm('Cancel receive invoice?', 'On this device', [
+        `Invoice #${transferIdx}`,
+        `Network: ${this.state.network}`,
+        `Asset: ${selected.assetId || 'Any / new asset'}`,
+        'This marks the receive invoice as Failed and releases its reservation. The invoice can no longer be used to receive tokens.',
+      ].join('\n'));
+      if (!approved) {
+        this.set({ message: 'Invoice kept active.' });
+        return;
+      }
+      assertCurrent();
+      await assertCancellable();
+      let failure = '';
+      try {
+        await wallet.failTransfers({ batchTransferIdx, noAssetOnly: !selected.assetId, skipSync: false });
+      } catch (error) {
+        // Native can advance the transfer before refusing cancellation.
+        failure = messageOf(error);
+      }
+      // A true return value can also mean the receive advanced during refresh.
+      // Confirm Failed from native history before reporting cancellation.
+      const { target } = await readTarget().catch((error) => {
+        throw new Error(`Could not verify cancellation. Refresh Activity: ${messageOf(error)}`);
       });
-      await this.readWalletData();
+      const cancelled = target.status === 'Failed';
+      if (cancelled) {
+        const invoice = this.state.invoice;
+        if (invoice && (invoice.batchTransferIdx === batchTransferIdx ||
+          invoice.invoice === target.invoiceString ||
+          (!!invoice.recipientId && invoice.recipientId === target.recipientId)))
+          this.set({ invoice: null });
+      }
       this.set({
-        message:
-          'Receive UTXOs prepared. Wait for their transaction to confirm before requesting an invoice.',
+        message: cancelled
+          ? `Invoice #${transferIdx} cancelled (Failed). Receive reservation released.`
+          : `Invoice #${transferIdx} was not cancelled. Current status: ${target.status}.`,
+        error: cancelled ? '' : failure,
+      });
+      await this.readWalletData().catch((error) => {
+        this.set({ error: `${cancelled ? 'Invoice cancelled' : 'Invoice status checked'}; balances could not refresh: ${messageOf(error)}` });
+      });
+    });
+  }
+
+  async prepareReceive(mode: 'ensure' | 'additional' = 'ensure') {
+    return this.localAction('Prepare RGB UTXOs', async (wallet) => {
+      const generation = this.generation;
+      if (mode === 'additional') {
+        const approved = await this.confirm('Create additional RGB UTXOs?', 'On this device', [
+          `Network: ${this.state.network}`,
+          'Create up to 4 new UTXOs of 1,000 sats each, even if existing outputs still have allocation slots.',
+          'This moves BTC within your wallet and pays a Bitcoin network fee at 2 sat/vB.',
+        ].join('\n'));
+        if (!approved) {
+          this.set({ message: 'UTXO creation cancelled.' });
+          return;
+        }
+        if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
+          throw new Error('Wallet changed. Review UTXO creation again.');
+      }
+      let created: number;
+      try {
+        created = await wallet.createUtxos({ upTo: mode === 'ensure', num: 4, size: 1000, feeRate: 2 });
+      } catch (error) {
+        if (mode !== 'ensure' || messageOf(error) !== 'AllocationsAlreadyAvailable') throw error;
+        // A count of outputs with allocation slots does not ensure enough empty
+        // outputs or BTC for a burn. Never silently retry with an extra transaction.
+        this.set({ message: 'At least 4 UTXOs already have allocation slots. A burn may still need additional empty outputs or BTC for fees. Use Create 4 additional UTXOs in Tools.' });
+        await this.readWalletData().catch((readError) => {
+          this.set({ error: `Could not refresh balances: ${messageOf(readError)}` });
+        });
+        return;
+      }
+      this.set({ message: `${created} RGB UTXO${created === 1 ? '' : 's'} created. Wait for confirmation, then refresh the wallet.` });
+      await this.readWalletData().catch((error) => {
+        this.set({ error: `UTXOs created; balances could not refresh: ${messageOf(error)}` });
       });
     });
   }
@@ -355,7 +537,7 @@ class DemoWalletService {
       const generation = this.generation;
       const operations = this.operations;
       const asset = this.state.assets.find((item) => item.assetId === form.assetId);
-      const { params, metadata } = prepareLocalBurn(form, asset, this.state.network);
+      const { params, metadata } = prepareLocalBurn(form, asset, this.state.network, this.profile.burnDestinationRoutes?.(this.state.network));
       const assertCurrent = () => {
         if (this.wallet !== wallet || generation !== this.generation || !this.state.ready || this.changingNetwork)
           throw new Error('Wallet changed. Review the burn again.');
@@ -396,7 +578,7 @@ class DemoWalletService {
   }
 
   async mockFundOrMine(action: 'fund' | 'mine') {
-    if (!mockFaucetEnabled(this.state.network)) return;
+    if (this.profile.protocol !== 'RGB_LN' || !mockFaucetEnabled(this.state.network)) return;
     return this.localAction(
       action === 'fund' ? 'Get test BTC' : 'Mine 3 blocks',
       async (wallet) => {
@@ -454,7 +636,7 @@ class DemoWalletService {
     return createDemoRgbProvider(this.wallet, {
       context,
       burn: this.state.burnAvailable
-        ? { operations: this.operations! }
+        ? { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) }
         : undefined,
       confirm: (request: WebRgbApproval) => {
         const isBurn = request.method === 'burnAsset';
@@ -524,5 +706,8 @@ class DemoWalletService {
 // Preserve the wallet, Core and listeners together until a full app reload.
 const runtime = globalThis as typeof globalThis & {
   __utexoDemoWallet?: DemoWalletService;
+  __utexoDemoRgbLibWallet?: DemoWalletService;
 };
 export const demoWallet = (runtime.__utexoDemoWallet ??= new DemoWalletService());
+
+export const rgbLibWallet = (runtime.__utexoDemoRgbLibWallet ??= new DemoWalletService(rgbLibProfile));

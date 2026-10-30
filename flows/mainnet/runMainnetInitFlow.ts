@@ -12,7 +12,7 @@ export async function runMainnetInitFlow() {
   beginExclusiveFlow(flowName);
   const { results, addStep, failFlow } = createFlowResults();
 
-  let node: UTEXOWallet | null = null;
+  let node: UTEXOWallet<'RGB_LN'> | null = null;
 
   try {
     const { network, unlockParams } = buildMainnetConfig();

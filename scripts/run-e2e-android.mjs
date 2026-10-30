@@ -17,6 +17,7 @@
  * Usage:
  *   node scripts/run-e2e-android.mjs                # all scenarios
  *   node scripts/run-e2e-android.mjs --only A,D     # subset
+ *   node scripts/run-e2e-android.mjs --only L1,L2,L3,L4  # rgb-lib only, no RLN node
  *   node scripts/run-e2e-android.mjs --port 8099    # marker sink port
  *
  * Prerequisites: `./scripts/start-lsp-regtest.sh` (writes the fixtures), an

@@ -23,8 +23,8 @@ export async function runExtSignerOnchainSendFlow() {
   beginExclusiveFlow(flowName);
   const { results, addStep, failFlow } = createFlowResults();
 
-  let nodeA: UTEXOWallet | null = null; // NativeExternalRLNSigner
-  let nodeB: UTEXOWallet | null = null; // PasswordRLNSigner
+  let nodeA: UTEXOWallet<'RGB_LN'> | null = null; // NativeExternalRLNSigner
+  let nodeB: UTEXOWallet<'RGB_LN'> | null = null; // PasswordRLNSigner
 
   try {
     const { network, unlockParams } = buildRegtestConfig();
