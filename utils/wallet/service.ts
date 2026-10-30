@@ -39,8 +39,8 @@ class DemoWalletService {
     burns: [],
   };
   private listeners = new Set<() => void>();
-  private wallet?: UTEXOWallet;
-  private wallets = new Map<DemoWalletNetwork, UTEXOWallet>();
+  private wallet?: UTEXOWallet<'RGB_LN'>;
+  private wallets = new Map<DemoWalletNetwork, UTEXOWallet<'RGB_LN'>>();
   private networkPromise?: Promise<void>;
   private changingNetwork = false;
   private pairing = false;
@@ -174,7 +174,7 @@ class DemoWalletService {
   private async open() {
     this.set({ message: 'Opening wallet…' });
     console.info('[Wallet] Opening saved wallet');
-    let wallet: UTEXOWallet | undefined;
+    let wallet: UTEXOWallet<'RGB_LN'> | undefined;
     const network = this.state.network;
     try {
       const config = buildDemoWalletConfig(network);
@@ -253,7 +253,7 @@ class DemoWalletService {
   }
 
   /** Local actions use the same queue as dApp requests, so native work cannot overlap. */
-  private async localAction<T>(label: string, action: (wallet: UTEXOWallet) => Promise<T>) {
+  private async localAction<T>(label: string, action: (wallet: UTEXOWallet<'RGB_LN'>) => Promise<T>) {
     if (
       !this.wallet ||
       !this.state.ready ||

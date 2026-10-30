@@ -69,8 +69,8 @@ export function useApayFlow() {
   /** True while the flow is parked on a manual gate, waiting for Continue. */
   const [awaitingContinue, setAwaitingContinue] = useState(false);
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef = useRef(false);
   const keepaliveActiveRef = useRef(false);
   const unusedHashesRef = useRef<number | null>(null);
@@ -127,7 +127,7 @@ export function useApayFlow() {
       `${formatAssetAmount(units, ASSET_PRECISION)} ${ASSET_TICKER}`;
 
     // Poll a wallet until it reports settled BTC > 0 (funding confirmed).
-    const pollFunded = async (w: UTEXOWallet, label: string): Promise<void> => {
+    const pollFunded = async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<void> => {
       const deadline = Date.now() + FUND_TIMEOUT_MS;
       while (Date.now() < deadline) {
         if (abortRef.current) throw new Error('Cancelled');
@@ -144,7 +144,7 @@ export function useApayFlow() {
     };
 
     // Poll a wallet until createUtxos tx confirms (spendable appears).
-    const pollUtxosConfirmed = async (w: UTEXOWallet, label: string): Promise<void> => {
+    const pollUtxosConfirmed = async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<void> => {
       const deadline = Date.now() + FUND_TIMEOUT_MS;
       while (Date.now() < deadline) {
         if (abortRef.current) throw new Error('Cancelled');
@@ -176,7 +176,7 @@ export function useApayFlow() {
      * `<storageDir>/.ldk/logs/logs.txt` (close-required error), not in the LSP
      * log, which only ever shows the 400.
      */
-    const channelPollKeepalive = (w: UTEXOWallet, lsp: any, label: string) => {
+    const channelPollKeepalive = (w: UTEXOWallet<'RGB_LN'>, lsp: any, label: string) => {
       const startedAt = Date.now();
       let warned = false;
       return async () => {

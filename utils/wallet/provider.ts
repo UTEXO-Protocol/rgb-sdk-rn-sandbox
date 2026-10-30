@@ -11,7 +11,7 @@ export interface DemoProviderOptions {
 
 /** The SDK supplies WebRGB results; the demo adds its operation queue and UI. */
 export function createDemoRgbProvider(
-  wallet: UTEXOWallet,
+  wallet: UTEXOWallet<'RGB_LN'>,
   options: DemoProviderOptions,
 ): WalletConnectBackend {
   const { context } = options;

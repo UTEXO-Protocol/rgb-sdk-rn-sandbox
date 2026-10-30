@@ -1,4 +1,4 @@
-import { BurnOperations, UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { BurnOperations, PasswordRLNSigner, RLNManager, UTEXOWallet } from '@utexo/rgb-sdk-rn';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
@@ -26,7 +26,18 @@ vm.runInNewContext(source, {
   },
 });
 
-test('burn history reports the burned amount, never its change, through the real SDK provider', async () => {
+// Exercise the public wallet and its transfer mapping; only replace the native read.
+function sdkTransferReader(t, readTransfers) {
+  t.mock.method(RLNManager.prototype, 'rlnListTransfers', readTransfers);
+  const wallet = new UTEXOWallet(
+    { network: 'regtest', storageDirPath: '/unused' },
+    new PasswordRLNSigner('test-only'),
+  );
+  assert.equal(wallet.protocol, 'RGB_LN');
+  return wallet.listTransfers.bind(wallet);
+}
+
+test('burn history reports the burned amount, never its change, through the real SDK provider', async (t) => {
   const assetId = 'rgb:burn-amount';
   const txid = 'c935a70610b2fafde779ba7f05fe211e8923a86dd6fd934542345ce4eb74c027';
   const records = [
@@ -41,9 +52,10 @@ test('burn history reports the burned amount, never its change, through the real
       assignments: ['Fungible(1000000)'] },
   ];
   let reads = 0;
+  const listTransfers = sdkTransferReader(t, async () => records);
   const wallet = {
     isDisposed: () => false,
-    async listTransfers(id) { assert.equal(this, wallet); assert.equal(id, assetId); reads++; return UTEXOWallet.prototype.listTransfers.call({ rln: { rlnListTransfers: async () => records } }, id); },
+    async listTransfers(id) { assert.equal(this, wallet); assert.equal(id, assetId); reads++; return listTransfers(id); },
     async refreshWallet() { assert.equal(this, wallet); },
   };
   const abort = new AbortController();
@@ -69,7 +81,7 @@ test('burn history reports the burned amount, never its change, through the real
   assert.equal(reads, 2, 'A revoked session cannot read native history');
 });
 
-test('the installed SDK supplies exact burn amounts through the demo without a journal workaround', async () => {
+test('the installed SDK supplies exact burn amounts through the demo without a journal workaround', async (t) => {
   const assetId = 'rgb:burn-amount', txid = 'c9'.repeat(32);
   const raw = [
     { idx: 1, txid, kind: 'Burn', status: 'Settled',
@@ -78,9 +90,10 @@ test('the installed SDK supplies exact burn amounts through the demo without a j
       requestedAssignment: 'Fungible(18446744073709551615)', assignments: [] },
     { idx: 3, txid: 'ef'.repeat(32), kind: 'Burn', status: 'Settled', assignments: ['Fungible(42)'] },
   ];
-  const rln = { async rlnListTransfers(id) { assert.equal(id, assetId); return raw; } };
-  const wallet = { isDisposed: () => false,
-    listTransfers: asset => UTEXOWallet.prototype.listTransfers.call({ rln }, asset) };
+  const wallet = {
+    isDisposed: () => false,
+    listTransfers: sdkTransferReader(t, async (id) => { assert.equal(id, assetId); return raw; }),
+  };
   const sdk = await wallet.listTransfers(assetId);
   assert.equal(sdk[0].requestedAssignment.amount, 100000);
   assert.equal(sdk[0].assignments[0].amount, 900000);
@@ -222,10 +235,10 @@ test('packed adapter connects the demo wallet provider, creates an invoice and r
       proofReads++;
       return bytes.toString('base64');
     },
-    listTransfers: asset => UTEXOWallet.prototype.listTransfers.call({ rln: {
-      rlnListTransfers: async () => [{ txid, idx: 3, kind: 'Burn', status: 'Settled',
-        requestedAssignment: 'Fungible(5)', assignments: ['Fungible(95)'] }],
-    } }, asset),
+    listTransfers: sdkTransferReader(t, async () => [
+      { txid, idx: 3, kind: 'Burn', status: 'Settled',
+        requestedAssignment: 'Fungible(5)', assignments: ['Fungible(95)'] },
+    ]),
     listTransactionsByTxid: async () => [{ txid, confirmationTime: { height: 100 } }],
     getNetworkInfo: async () => ({ blockHeight: 102 }),
     refreshWallet: async () => {},

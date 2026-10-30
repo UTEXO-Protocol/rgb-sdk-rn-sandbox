@@ -16,7 +16,7 @@ export type RgbBalanceSnap = {
 };
 
 export async function snapshotRgbBalances(
-  wallet: UTEXOWallet,
+  wallet: UTEXOWallet<'RGB_LN'>,
   assetId: string,
   lspPubkey: string,
 ): Promise<RgbBalanceSnap> {
@@ -83,8 +83,8 @@ export function logRgbBalanceDelta(
 }
 
 export async function logSettlementDiagnostics(
-  wA: UTEXOWallet,
-  wB: UTEXOWallet,
+  wA: UTEXOWallet<'RGB_LN'>,
+  wB: UTEXOWallet<'RGB_LN'>,
   paymentHash: string,
   lspPubkey: string,
   assetId: string,

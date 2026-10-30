@@ -109,7 +109,7 @@ export async function scenarioD(ctx: ScenarioContext): Promise<void> {
   // No `batchTransferIdx`: inflation is not a batch transfer, and the rn wallet
   // deliberately invents nothing the uniffi response does not carry.
   assert(
-    !('batchTransferIdx' in (inflated as Record<string, unknown>)),
+    !('batchTransferIdx' in inflated),
     'inflate must not invent a batchTransferIdx'
   );
 

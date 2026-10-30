@@ -27,9 +27,9 @@ export type DemoWalletState = {
     expirationTimestamp?: number | null;
     source: string;
   } | null;
-  btcBalance: Awaited<ReturnType<UTEXOWallet['getBtcBalance']>> | null;
+  btcBalance: Awaited<ReturnType<UTEXOWallet<'RGB_LN'>['getBtcBalance']>> | null;
   assets: WalletAsset[];
-  transfers: (Awaited<ReturnType<UTEXOWallet['listTransfers']>>[number] & { assetId: string })[];
+  transfers: (Awaited<ReturnType<UTEXOWallet<'RGB_LN'>['listTransfers']>>[number] & { assetId: string })[];
   updatedAt: number | null;
   refreshing: boolean;
   activeRequest: string;

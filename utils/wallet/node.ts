@@ -40,7 +40,7 @@ export function describeWalletConfiguration(config: ReturnType<typeof buildDemoW
 
 export async function openSavedWallet(
   config: ReturnType<typeof buildDemoWalletConfig>,
-  stoppedWallet?: UTEXOWallet,
+  stoppedWallet?: UTEXOWallet<'RGB_LN'>,
 ) {
   if (stoppedWallet) {
     try {

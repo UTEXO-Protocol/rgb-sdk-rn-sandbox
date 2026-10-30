@@ -40,8 +40,8 @@ export function useLspFlow() {
   const [finalBalB,      setFinalBalB]      = useState<any>(null);
   const [errorMsg,       setErrorMsg]       = useState('');
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef   = useRef(false);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -88,7 +88,7 @@ export function useLspFlow() {
       };
 
       // helper: poll until settled balance > 0, returns the settled amount
-      const pollFunded = async (w: UTEXOWallet, label: string): Promise<number> => {
+      const pollFunded = async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<number> => {
         const deadline = Date.now() + FUND_TIMEOUT_MS;
         while (Date.now() < deadline) {
           if (abortRef.current) throw new Error('Cancelled');
@@ -105,7 +105,7 @@ export function useLspFlow() {
       };
 
       // helper: poll until any spendable appears (createUtxos tx confirmed)
-      const pollUtxosConfirmed = async (w: UTEXOWallet, label: string): Promise<void> => {
+      const pollUtxosConfirmed = async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<void> => {
         const deadline = Date.now() + FUND_TIMEOUT_MS;
         while (Date.now() < deadline) {
           if (abortRef.current) throw new Error('Cancelled');

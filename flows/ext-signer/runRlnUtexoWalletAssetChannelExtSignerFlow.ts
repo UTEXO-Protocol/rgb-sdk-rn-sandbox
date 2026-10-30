@@ -25,7 +25,7 @@ import {
  * confirmations to minimum_depth and numUsableChannels stays 0.
  */
 async function waitForUsableChannels(
-  nodes: [UTEXOWallet, string][],
+  nodes: [UTEXOWallet<'RGB_LN'>, string][],
   opts: {
     minUsable?: number;
     timeoutMs?: number;
@@ -59,8 +59,8 @@ export async function runRlnUtexoWalletAssetChannelExtSignerFlow() {
   beginExclusiveFlow(flowName);
   const { results, addStep, failFlow } = createFlowResults();
 
-  let nodeA: UTEXOWallet | null = null;
-  let nodeB: UTEXOWallet | null = null;
+  let nodeA: UTEXOWallet<'RGB_LN'> | null = null;
+  let nodeB: UTEXOWallet<'RGB_LN'> | null = null;
 
   try {
     const { network, unlockParams } = buildRegtestConfig();
