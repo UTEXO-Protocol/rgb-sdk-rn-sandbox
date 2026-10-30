@@ -3,8 +3,9 @@ const { getDefaultConfig } = require('expo/metro-config');
 const { createRequire } = require('module');
 const path = require('path');
 
-const sdkPackage = require.resolve('@utexo/rgb-sdk-rn/package.json');
-const sdkRequire = createRequire(sdkPackage);
+const sdkRequire = createRequire(
+  require.resolve('@utexo/rgb-sdk-rn/package.json')
+);
 const coreEntry = sdkRequire.resolve('@utexo/rgb-sdk-core');
 const coreEntries = new Map([
   ['@utexo/rgb-sdk-core', coreEntry],
@@ -16,11 +17,6 @@ const coreEntries = new Map([
 ]);
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
-// A file: dependency links the adjacent checkout, including its native bindings.
-config.watchFolders = [...new Set([
-  ...(config.watchFolders ?? []),
-  path.dirname(sdkPackage),
-])];
 
 config.resolver = {
   ...config.resolver,

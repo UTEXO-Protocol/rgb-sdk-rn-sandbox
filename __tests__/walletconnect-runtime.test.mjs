@@ -721,7 +721,7 @@ test('Wallet tab defaults to Utexo signet even when a mock faucet and network ov
   });
   const signet = exports.buildDemoWalletConfig();
   assert.equal(signet.network, 'utexo');
-  assert.equal(signet.unlockParams.indexerUrl, 'https://esplora-api.utexo.com');
+  assert.equal(signet.unlockParams.indexerUrl, 'https://dev.esplora-01.mint.utexo.com');
   assert.equal(signet.unlockParams.proxyEndpoint, 'rpcs://rgb-proxy.utexo.com/json-rpc');
   const local = exports.buildDemoWalletConfig('regtest');
   assert.equal(local.network, 'regtest');
@@ -736,7 +736,14 @@ test('Wallet tab defaults to Utexo signet even when a mock faucet and network ov
   env.EXPO_PUBLIC_RLN_PROXY_ENDPOINT = 'rpc://local-proxy:3000/json-rpc';
   assert.equal(exports.buildDemoWalletConfig('regtest').unlockParams.indexerUrl, 'local-indexer:50001');
   assert.equal(exports.buildDemoWalletConfig('regtest').unlockParams.proxyEndpoint, 'rpc://local-proxy:3000/json-rpc');
-  assert.throws(() => exports.buildDemoWalletConfig('mainnet'), /Unsupported/);
+  const mainnet = exports.buildDemoWalletConfig('mainnet');
+  assert.equal(mainnet.network, 'mainnet');
+  assert.equal(mainnet.unlockParams.indexerUrl, 'ssl://electrs-01.utexo.com:50002');
+  assert.equal(mainnet.unlockParams.proxyEndpoint, 'rpcs://rgb-proxy.utexo.com/json-rpc');
+  const publicSignet = exports.buildDemoWalletConfig('signet');
+  assert.equal(publicSignet.network, 'signet');
+  assert.equal(publicSignet.unlockParams.indexerUrl, 'ssl://electrum.iriswallet.com:50033');
+  assert.throws(() => exports.buildDemoWalletConfig('testnet'), /Unsupported/);
 });
 
 test('selecting a network before opening only saves a local preference', async () => {

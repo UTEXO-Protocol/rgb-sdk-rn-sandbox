@@ -49,7 +49,8 @@ export const rgbLibProfile: WalletProfile = {
     return openSavedRgbLibWallet(network, stopped);
   },
   deleteSaved: deleteSavedRgbLibWallet,
-  burnEnabled: () => true,
+  // The demo bridge routes cover utexo and regtest only.
+  burnEnabled: (network) => network === 'utexo' || network === 'regtest',
   // Deployment routes shared with utexo-bridge-fe; never supplied by the dApp.
   burnDestinationRoutes: (network) => network === 'regtest'
     ? [{ chainId: 'eip155:31337', dstEid: 0 }]

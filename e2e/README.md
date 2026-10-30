@@ -25,6 +25,34 @@ yarn test:e2e --verbose       # echo raw ReactNativeJS logs too
 
 Exit code: `0` pass, `1` a scenario failed, `2` setup/timeout problem.
 
+## rgb-lib (RGB_L1) scenarios L1–L4
+
+These run two fresh rgb-lib wallets (`sender`, `receiver`) and no Lightning
+node. They only need bitcoind, electrs and the RGB proxy from the regtest
+stack, plus the bitcoin bridge on `:5000` for funding and mining.
+
+```bash
+yarn test:e2e --only L1,L2,L3,L4                       # Android emulator
+npm run test:e2e -- --platform ios --only L1,L2,L3,L4  # iOS simulator
+```
+
+| Id | What it proves |
+|----|----------------|
+| L1 | identity and network, `getBfaCapabilities`, funding, `createUtxos`, `listUnspents`, `sendBtc` moves exactly the amount to the other wallet |
+| L2 | NIA issue, `blindReceive` + `decodeRGBInvoice` + `onchainSend`, then a `witnessReceive` send; both settle with exact balances, kinds and `Settled` status |
+| L3 | the BFA send path: payout → burn destination (route `eip155:31337`) → 32-byte hash → `BurnOperations` journal → `burn` → `getConsignment` / `getConsignmentPath`; NIA burn and invalid params are refused |
+| L4 | `createBackup`, wipe the wallet directory, wrong password refused, `restoreFromBackup` into an empty directory, same assets and balances, and the restored wallet can still send |
+
+L2–L4 build on L1 (funding, UTXOs) and L2's asset; run them in order.
+
+L3 burns an IFA asset, not a BFA one. A BFA asset is minted by the bridge from
+an EVM deposit, which the local stack does not run. rgb-lib burns IFA and BFA
+through the same code (`SCHEMAS_SUPPORTING_BURN`), so everything after the
+asset type is the same path. A BFA mint (receive from EVM) is not covered.
+
+The indexer from `e2e-fixtures.json` (`127.0.0.1:50001`) is used as
+`tcp://127.0.0.1:50001`, because rgb-lib needs the scheme.
+
 ## VSS restore on the iOS simulator (scenario H)
 
 ```bash

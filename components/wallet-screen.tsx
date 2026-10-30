@@ -153,17 +153,19 @@ export function WalletScreen({ wallet }: { wallet: DemoWalletService }) {
         <View style={styles.card}>
           <Text style={styles.heading}>Network</Text>
           <View style={styles.networks} accessibilityRole="radiogroup">
-            {DEMO_WALLET_NETWORKS.map(({ id, label }) => (
+            {DEMO_WALLET_NETWORKS.map(({ id, label, short, hint }) => (
               <Pressable
                 key={id}
                 accessibilityRole="radio"
+                accessibilityLabel={label}
                 accessibilityState={{ checked: state.network === id, disabled: walletBusy || pairing || !state.networkLoaded }}
                 disabled={walletBusy || pairing || !state.networkLoaded}
                 onPress={() => { void wallet.selectNetwork(id); }}
                 style={[styles.network, state.network === id && styles.selectedNetwork,
                   (walletBusy || pairing || !state.networkLoaded) && styles.disabled]}
               >
-                <Text style={[styles.text, state.network === id && styles.selectedText]}>{label}</Text>
+                <Text numberOfLines={1} style={[styles.networkName, state.network === id && styles.selectedText]}>{short}</Text>
+                <Text numberOfLines={1} style={styles.networkHint}>{hint}</Text>
               </Pressable>
             ))}
           </View>
@@ -172,6 +174,10 @@ export function WalletScreen({ wallet }: { wallet: DemoWalletService }) {
               ? 'Use an indexer and RGB proxy compatible with rgb-lib for the selected network.'
               : state.network === 'utexo'
               ? 'Utexo signet uses the shared Utexo test network.'
+              : state.network === 'signet'
+              ? 'Public signet uses the public signet chain, not the Utexo signet.'
+              : state.network === 'mainnet'
+              ? 'Mainnet uses real bitcoin. Back up the wallet before you fund it.'
               : 'Local regtest requires your own running indexer and RGB proxy. On a physical iPhone, use your computer’s LAN address instead of 127.0.0.1.'}
           </Text>
           <Text style={styles.heading}>Wallet parameters</Text>
@@ -364,9 +370,17 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 14,
   },
-  networks: { flexDirection: 'row', gap: 10 },
-  network: { flex: 1, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: C.border, borderRadius: 8 },
-  selectedNetwork: { borderColor: C.primary, backgroundColor: C.bgInput },
+  networks: {
+    flexDirection: 'row', gap: 4, padding: 4, borderRadius: 10,
+    backgroundColor: C.bgInput, borderWidth: 1, borderColor: C.border,
+  },
+  network: {
+    flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center',
+    borderRadius: 7, borderWidth: 1, borderColor: 'transparent',
+  },
+  selectedNetwork: { borderColor: C.primary, backgroundColor: C.bgCard },
+  networkName: { color: C.textSecondary, fontSize: 13, fontWeight: '500' },
+  networkHint: { color: C.textTertiary, fontSize: 11, marginTop: 1 },
   selectedText: { color: C.primary, fontWeight: '600' },
   disabled: { opacity: 0.5 },
   endpoint: { color: C.textTertiary, fontFamily: C.mono, fontSize: 12, lineHeight: 20 },

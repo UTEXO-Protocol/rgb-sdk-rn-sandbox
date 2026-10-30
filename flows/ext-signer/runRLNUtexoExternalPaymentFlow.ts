@@ -22,9 +22,9 @@ export async function runRLNUtexoExternalPaymentFlow() {
   beginExclusiveFlow(flowName);
   const { results, addStep, failFlow } = createFlowResults();
 
-  let nodeA: UTEXOWallet | null = null;
-  let nodeB: UTEXOWallet | null = null;
-  let nodeC: UTEXOWallet | null = null;
+  let nodeA: UTEXOWallet<'RGB_LN'> | null = null;
+  let nodeB: UTEXOWallet<'RGB_LN'> | null = null;
+  let nodeC: UTEXOWallet<'RGB_LN'> | null = null;
 
   try {
     const { network, unlockParams } = buildRegtestConfig();
@@ -225,7 +225,7 @@ export async function runRLNUtexoExternalPaymentFlow() {
 
     await mine(6);
     await sleep(3000);
-    for (const [node, label] of [[nodeA, 'nodeA'], [nodeB, 'nodeB']] as [UTEXOWallet, string][]) {
+    for (const [node, label] of [[nodeA, 'nodeA'], [nodeB, 'nodeB']] as [UTEXOWallet<'RGB_LN'>, string][]) {
       const deadline = Date.now() + 120000;
       while (Date.now() < deadline) {
         await node.syncWallet();

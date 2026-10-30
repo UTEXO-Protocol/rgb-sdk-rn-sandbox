@@ -41,8 +41,8 @@ export function useVirtualChannelSignetFlow() {
   const [balB,      setBalB]      = useState<any>(null);
   const [errorMsg,  setErrorMsg]  = useState('');
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef   = useRef(false);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -52,7 +52,7 @@ export function useVirtualChannelSignetFlow() {
   }, []);
 
   // Poll until settled BTC balance > 0
-  const pollFunded = useCallback(async (w: UTEXOWallet, label: string): Promise<void> => {
+  const pollFunded = useCallback(async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<void> => {
     const deadline = Date.now() + FUND_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (abortRef.current) throw new Error('Cancelled');
@@ -69,7 +69,7 @@ export function useVirtualChannelSignetFlow() {
   }, [addLog]);
 
   // Poll until any spendable BTC appears (createUtxos tx confirmed)
-  const pollUtxosConfirmed = useCallback(async (w: UTEXOWallet, label: string): Promise<void> => {
+  const pollUtxosConfirmed = useCallback(async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<void> => {
     const deadline = Date.now() + UTXO_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (abortRef.current) throw new Error('Cancelled');

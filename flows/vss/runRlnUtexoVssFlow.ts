@@ -30,9 +30,9 @@ export async function runRlnUtexoVssFlow() {
   beginExclusiveFlow(flowName);
   const { results, addStep, failFlow } = createFlowResults();
 
-  let wallet: UTEXOWallet | null = null;
-  let nodeB: UTEXOWallet | null = null;
-  let walletRestored: UTEXOWallet | null = null;
+  let wallet: UTEXOWallet<'RGB_LN'> | null = null;
+  let nodeB: UTEXOWallet<'RGB_LN'> | null = null;
+  let walletRestored: UTEXOWallet<'RGB_LN'> | null = null;
 
   // TEMP: minimal reproduction using the configured UTEXO VSS endpoint.
   const backupOnly = process.env.EXPO_PUBLIC_UTEXO_VSS_BACKUP_ONLY === '1';

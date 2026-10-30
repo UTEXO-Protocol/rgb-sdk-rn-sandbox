@@ -2,11 +2,12 @@
 // Any accidental native call must fail; tests supply their own wallet backend.
 const url = 'rn-stub:react-native';
 const source = `
+const nativeModule = new Proxy({}, { get: () => () => {
+  throw new Error('Native calls are unavailable in Node tests');
+}});
 export const TurboModuleRegistry = {
-  getEnforcing: () => new Proxy({}, { get: () => () => {
-    throw new Error('Native calls are unavailable in Node tests');
-  }}),
-  get: () => null,
+  getEnforcing: () => nativeModule,
+  get: (name) => name === 'Rgb' ? nativeModule : null,
 };
 export const NativeModules = {};
 export const Platform = { OS: 'node', select: (options) => options.default ?? options.native };

@@ -116,7 +116,7 @@ interface ConformanceSummary {
  * share one live wallet, so `it` bodies are chained rather than raced, and a
  * failure is recorded instead of thrown so every check still runs.
  */
-async function runLiveConformance(wallet: UTEXOWallet): Promise<ConformanceSummary> {
+async function runLiveConformance(wallet: UTEXOWallet<'RGB_LN'>): Promise<ConformanceSummary> {
   const results: { test: string; ok: boolean; error?: string }[] = [];
   const stack: string[] = [];
   let chain = Promise.resolve();

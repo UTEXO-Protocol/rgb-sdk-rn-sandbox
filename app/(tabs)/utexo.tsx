@@ -279,8 +279,8 @@ export default function UtexoScreen() {
   const [errorMsg, setErrorMsg]         = useState('');
   const [log, setLog]                   = useState<LogEntry[]>([]);
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef   = useRef(false);
   const activeNetworkRef = useRef<'utexo' | 'regtest'>('utexo');
   const portBRef   = useRef(0);
@@ -486,7 +486,7 @@ export default function UtexoScreen() {
           throw new Error('Timed out waiting for BTC on both nodes (45 min).');
 
         // UTEXO: wait for LDK to process the confirming block before createUtxos
-        for (const [w, label] of [[wA, 'nodeA'], [wB, 'nodeB']] as [UTEXOWallet, string][]) {
+        for (const [w, label] of [[wA, 'nodeA'], [wB, 'nodeB']] as [UTEXOWallet<'RGB_LN'>, string][]) {
           req(`${label}.getNetworkInfo`);
           const { blockHeight: h0 } = await w.getNetworkInfo();
           res(`${label}.getNetworkInfo`, { height: h0 });
@@ -509,7 +509,7 @@ export default function UtexoScreen() {
       for (const [w, label, settled] of [
         [wA, 'nodeA', settledA],
         [wB, 'nodeB', settledB],
-      ] as [UTEXOWallet, string, number][]) {
+      ] as [UTEXOWallet<'RGB_LN'>, string, number][]) {
         req(`${label}.syncWallet`);
         await w.syncWallet();
         res(`${label}.syncWallet`);
@@ -704,7 +704,7 @@ export default function UtexoScreen() {
 
       addLog('Waiting for channel to become usable on both nodes…');
       const channelUsableTimeout = isRegtest ? CHANNEL_USABLE_TIMEOUT_MS_REGTEST : CHANNEL_USABLE_TIMEOUT_MS_UTEXO;
-      for (const [w, label] of [[wA, 'nodeA'], [wB, 'nodeB']] as [UTEXOWallet, string][]) {
+      for (const [w, label] of [[wA, 'nodeA'], [wB, 'nodeB']] as [UTEXOWallet<'RGB_LN'>, string][]) {
         const deadline = Date.now() + channelUsableTimeout;
         while (Date.now() < deadline) {
           if (abortRef.current) throw new Error('Cancelled');
@@ -922,7 +922,7 @@ export default function UtexoScreen() {
           <View style={s.networkBadge}>
             <View style={s.networkDot} />
             <Text style={s.networkLabel}>
-              {selectedNetwork === 'utexo' ? 'utexo · esplora-api.utexo.com' : `regtest · ${_rpcHost}:18443`}
+              {selectedNetwork === 'utexo' ? 'utexo · dev.esplora-01.mint.utexo.com' : `regtest · ${_rpcHost}:18443`}
             </Text>
           </View>
         </View>
@@ -962,7 +962,7 @@ export default function UtexoScreen() {
               {selectedNetwork === 'utexo' ? (
                 <>
                   <Text style={s.credLine}>bitcoind  46.224.75.237:38332</Text>
-                  <Text style={s.credLine}>indexer   esplora-api.utexo.com</Text>
+                  <Text style={s.credLine}>indexer   dev.esplora-01.mint.utexo.com</Text>
                   <Text style={s.credLine}>proxy     rgb-proxy-utexo.utexo.com</Text>
                 </>
               ) : (

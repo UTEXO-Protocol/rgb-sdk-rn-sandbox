@@ -144,9 +144,9 @@ export function useApayLinkedAssetSignetFlow(options: UseApayLinkedAssetSignetFl
   const [refundStatus, setRefundStatus] = useState('');
   const [refundBalA, setRefundBalA] = useState<any>(null);
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
-  const walletCRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletCRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef = useRef(false);
   const keepaliveActiveRef = useRef(false);
   const unusedHashesRef = useRef<number | null>(null);
@@ -180,7 +180,7 @@ export function useApayLinkedAssetSignetFlow(options: UseApayLinkedAssetSignetFl
     const checkAbort = () => { if (abortRef.current) throw new Error('Cancelled'); };
 
     /** Poll a wallet until the faucet's BTC send has a confirmation. */
-    const pollFunded = async (w: UTEXOWallet, label: string): Promise<void> => {
+    const pollFunded = async (w: UTEXOWallet<'RGB_LN'>, label: string): Promise<void> => {
       const deadline = Date.now() + FUND_TIMEOUT_MS;
       while (Date.now() < deadline) {
         checkAbort();
@@ -206,7 +206,7 @@ export function useApayLinkedAssetSignetFlow(options: UseApayLinkedAssetSignetFl
      * says nothing about confirmation. `settled` is `balance.confirmed` alone
      * (rgb-lib `_get_btc_balance`, wallet/offline.rs).
      */
-    const coloredSettledSat = async (w: UTEXOWallet): Promise<number> => {
+    const coloredSettledSat = async (w: UTEXOWallet<'RGB_LN'>): Promise<number> => {
       const b = await w.getBtcBalance().catch(() => null) as any;
       return Number(b?.colored?.settled ?? 0);
     };
@@ -223,7 +223,7 @@ export function useApayLinkedAssetSignetFlow(options: UseApayLinkedAssetSignetFl
      * `openChannel` or a blind receive against an unconfirmed one fails — so
      * unlike the fund poll this one is worth failing on.
      */
-    const pollUtxosConfirmed = async (w: UTEXOWallet, label: string, before: number): Promise<void> => {
+    const pollUtxosConfirmed = async (w: UTEXOWallet<'RGB_LN'>, label: string, before: number): Promise<void> => {
       const deadline = Date.now() + FUND_TIMEOUT_MS;
       while (Date.now() < deadline) {
         checkAbort();
@@ -251,7 +251,7 @@ export function useApayLinkedAssetSignetFlow(options: UseApayLinkedAssetSignetFl
      * side is never retried, and the reason for that is in this node's
      * `.ldk/logs/logs.txt`, not in the LSP log.
      */
-    const channelPollKeepalive = (w: UTEXOWallet, lsp: any, label: string) => {
+    const channelPollKeepalive = (w: UTEXOWallet<'RGB_LN'>, lsp: any, label: string) => {
       const startedAt = Date.now();
       let warned = false;
       return async () => {

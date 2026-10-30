@@ -38,7 +38,7 @@ export function readEnv(name: string): string | null {
 
 export function buildUtexoConfig() {
   const network = (process.env.EXPO_PUBLIC_UTEXO_NETWORK?.trim() || 'utexo') as any;
-  const indexerUrl = process.env.EXPO_PUBLIC_UTEXO_INDEXER_URL?.trim() || 'https://esplora-api.utexo.com';
+  const indexerUrl = process.env.EXPO_PUBLIC_UTEXO_INDEXER_URL?.trim() || 'https://dev.esplora-01.mint.utexo.com';
   const proxyEndpoint = process.env.EXPO_PUBLIC_UTEXO_PROXY_ENDPOINT?.trim() || 'rpcs://rgb-proxy.utexo.com/json-rpc';
   const gossipRgsServerUrl = process.env.EXPO_PUBLIC_UTEXO_GOSSIP_RGS_URL?.trim() || null;
 
@@ -56,16 +56,40 @@ export function buildUtexoConfig() {
 }
 
 export const DEMO_WALLET_NETWORKS = [
-  { id: 'utexo', label: 'Utexo signet' },
-  { id: 'regtest', label: 'Local regtest' },
+  { id: 'utexo', label: 'Utexo signet', short: 'Utexo', hint: 'signet' },
+  { id: 'signet', label: 'Public signet', short: 'Signet', hint: 'public' },
+  { id: 'regtest', label: 'Local regtest', short: 'Regtest', hint: 'local' },
+  { id: 'mainnet', label: 'Mainnet', short: 'Mainnet', hint: 'real BTC' },
 ] as const;
 export type DemoWalletNetwork = (typeof DEMO_WALLET_NETWORKS)[number]['id'];
 export const isDemoWalletNetwork = (value: unknown): value is DemoWalletNetwork =>
-  value === 'utexo' || value === 'regtest';
+  value === 'utexo' || value === 'signet' || value === 'regtest' || value === 'mainnet';
+
+/** Public signet endpoints; the proxy implements protocol 1.0, so rgb-lib can use it too. */
+export const PUBLIC_SIGNET_INDEXER_URL = 'ssl://electrum.iriswallet.com:50033';
+export const PUBLIC_SIGNET_PROXY_ENDPOINT = 'rpcs://staging.rgb-proxy.utexo.com/json-rpc';
+
+/** Mainnet endpoints, the same as the SDK defaults. */
+export const MAINNET_INDEXER_URL = 'ssl://electrs-01.utexo.com:50002';
+export const MAINNET_PROXY_ENDPOINT = 'rpcs://rgb-proxy.utexo.com/json-rpc';
+
+export function buildSignetConfig() {
+  return {
+    network: 'signet' as const,
+    unlockParams: {
+      indexerUrl: process.env.EXPO_PUBLIC_SIGNET_INDEXER_URL?.trim() || PUBLIC_SIGNET_INDEXER_URL,
+      proxyEndpoint: process.env.EXPO_PUBLIC_SIGNET_PROXY_ENDPOINT?.trim() || PUBLIC_SIGNET_PROXY_ENDPOINT,
+      announceAddresses: [] as string[],
+      announceAlias: null as string | null,
+    } as IRLNUnlockParams,
+  };
+}
 
 /** The Wallet tab selects its network explicitly; a mock URL only configures regtest. */
 export function buildDemoWalletConfig(network: DemoWalletNetwork = 'utexo') {
   if (network === 'utexo') return { ...buildUtexoConfig(), network };
+  if (network === 'signet') return buildSignetConfig();
+  if (network === 'mainnet') return buildMainnetConfig();
   if (network !== 'regtest') throw new Error('Unsupported wallet network');
   const mockUrl = process.env.EXPO_PUBLIC_DEMO_MOCK_FAUCET_URL?.trim();
   if (!mockUrl) return buildRegtestConfig();
@@ -85,8 +109,8 @@ export function buildDemoWalletConfig(network: DemoWalletNetwork = 'utexo') {
 }
 
 export function buildMainnetConfig() {
-  const indexerUrl = process.env.EXPO_PUBLIC_MAINNET_INDEXER_URL?.trim() || 'https://esplora-mainnet.utexo.com';
-  const proxyEndpoint = process.env.EXPO_PUBLIC_MAINNET_PROXY_ENDPOINT?.trim() || 'rpcs://rgb-proxy-mainnet.utexo.com/json-rpc';
+  const indexerUrl = process.env.EXPO_PUBLIC_MAINNET_INDEXER_URL?.trim() || MAINNET_INDEXER_URL;
+  const proxyEndpoint = process.env.EXPO_PUBLIC_MAINNET_PROXY_ENDPOINT?.trim() || MAINNET_PROXY_ENDPOINT;
 
   return {
     network: 'mainnet' as const,

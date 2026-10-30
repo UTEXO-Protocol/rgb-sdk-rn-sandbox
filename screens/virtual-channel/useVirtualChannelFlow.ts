@@ -52,9 +52,9 @@ export function useVirtualChannelFlow() {
   const [clientOpenError,   setClientOpenError]   = useState('');
   const [clientOpenChanId,  setClientOpenChanId]  = useState('');
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
-  const walletCRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletCRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef   = useRef(false);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {

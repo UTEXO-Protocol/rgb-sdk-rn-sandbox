@@ -6,19 +6,50 @@ import {
 } from '@utexo/rgb-sdk-rn';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
-import type { DemoWalletNetwork } from '../env';
+import {
+  MAINNET_INDEXER_URL,
+  MAINNET_PROXY_ENDPOINT,
+  PUBLIC_SIGNET_INDEXER_URL,
+  PUBLIC_SIGNET_PROXY_ENDPOINT,
+  type DemoWalletNetwork,
+} from '../env';
+
+// Expo inlines EXPO_PUBLIC_* only on static access, so each variable is named in full.
+function rgbLibEnv(network: DemoWalletNetwork) {
+  switch (network) {
+    case 'utexo':
+      return {
+        indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL,
+        proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT,
+        evmJson: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS,
+      };
+    case 'signet':
+      return {
+        indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_INDEXER_URL?.trim() || PUBLIC_SIGNET_INDEXER_URL,
+        proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_PROXY_ENDPOINT?.trim() || PUBLIC_SIGNET_PROXY_ENDPOINT,
+        evmJson: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_EVM_RPC_URLS,
+      };
+    case 'mainnet':
+      return {
+        indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_INDEXER_URL?.trim() || MAINNET_INDEXER_URL,
+        proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_PROXY_ENDPOINT?.trim() || MAINNET_PROXY_ENDPOINT,
+        evmJson: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_EVM_RPC_URLS,
+      };
+    case 'regtest':
+      return {
+        indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL,
+        proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_PROXY_ENDPOINT,
+        evmJson: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_EVM_RPC_URLS,
+      };
+  }
+}
 
 /** No implicit reuse of an RLN deployment: the two releases need compatible proxies. */
 export function buildRgbLibConfig(network: DemoWalletNetwork) {
-  const indexerUrl = (network === 'utexo'
-    ? process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL
-    : process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL)?.trim();
-  const proxyEndpoint = (network === 'utexo'
-    ? process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT
-    : process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_PROXY_ENDPOINT)?.trim();
-  const evmJson = (network === 'utexo'
-    ? process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS
-    : process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_EVM_RPC_URLS)?.trim();
+  const env = rgbLibEnv(network);
+  const indexerUrl = env.indexerUrl?.trim();
+  const proxyEndpoint = env.proxyEndpoint?.trim();
+  const evmJson = env.evmJson?.trim();
   const prefix = `EXPO_PUBLIC_RGB_LIB_${network.toUpperCase()}`;
   if (!indexerUrl || !proxyEndpoint) {
     throw new Error(`Set ${prefix}_INDEXER_URL and ${prefix}_PROXY_ENDPOINT in .env.local to a compatible rgb-lib deployment, then restart Metro.`);

@@ -166,9 +166,9 @@ export function useApayLinkedAssetFlow(options: UseApayLinkedAssetFlowOptions = 
   const [refundStatus, setRefundStatus] = useState('');
   const [refundBalA, setRefundBalA] = useState<any>(null);
 
-  const walletARef = useRef<UTEXOWallet | null>(null);
-  const walletBRef = useRef<UTEXOWallet | null>(null);
-  const walletCRef = useRef<UTEXOWallet | null>(null);
+  const walletARef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletBRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
+  const walletCRef = useRef<UTEXOWallet<'RGB_LN'> | null>(null);
   const abortRef = useRef(false);
   const keepaliveActiveRef = useRef(false);
   const unusedHashesRef = useRef<number | null>(null);

@@ -64,7 +64,7 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
 
   return <View style={styles.card}>
     <View style={styles.tabs}>
-      {(['Assets', 'Receive', 'Burn', 'Activity', 'Tools'] as const).filter((value) => value !== 'Burn' || state.protocol === 'RGB_LN').map((value) =>
+      {(['Assets', 'Receive', 'Burn', 'Activity', 'Tools'] as const).map((value) =>
         <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }}
           style={[styles.tab, tab === value && styles.selectedTab]} onPress={() => { setTab(value); setFeedback(''); }}>
           <Text style={[styles.text, tab === value && styles.selectedText]}>{value}</Text>
@@ -215,7 +215,7 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
         onPress={() => { void wallet.prepareReceive('additional'); }} />
       {faucetEnabled && <WalletButton title="Mine 3 regtest blocks" disabled={disabled}
         onPress={() => { void wallet.mockFundOrMine('mine'); }} />}
-      <Text style={styles.text}>{state.protocol === 'RGB_L1' ? 'On-chain RGB mode. Bridge payouts are not enabled for this wallet.' : state.burnAvailable ? 'Burn BFA tokens in the Burn tab or through a connected website. Saved burn proofs can be shared with the bridge through WalletConnect.' : 'BFA burn is unavailable with this native build or network configuration.'}</Text>
+      <Text style={styles.text}>{state.burnAvailable ? 'Burn BFA tokens in the Burn tab or through a connected website. Saved burn proofs can be shared with the bridge through WalletConnect.' : 'BFA burn is unavailable with this native build or network configuration.'}</Text>
     </>}
     {!!feedback && <Text accessibilityLiveRegion="polite" style={styles.text}>{feedback}</Text>}
   </View>;
