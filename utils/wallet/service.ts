@@ -636,9 +636,8 @@ export class DemoWalletService {
     const generation = this.generation;
     return createDemoRgbProvider(this.wallet, {
       context,
-      burn: this.state.burnAvailable
-        ? { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) }
-        : undefined,
+      burn: { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) },
+      burnEnabled: this.state.burnAvailable,
       confirm: (request: WebRgbApproval) => {
         const isBurn = request.method === 'burnAsset';
         const isProof = request.method === 'getConsignment';

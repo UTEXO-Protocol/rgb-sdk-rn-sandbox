@@ -5,6 +5,7 @@ import {
   encodeEvmBurnRecipient,
   encodeTronBurnRecipient,
   normalizeBurnRecord,
+  WebRgbError,
 } from '@utexo/rgb-sdk/webrgb';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,7 +62,7 @@ function fixture(init, modules = {}, env = {}) {
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
       // RGB_L1 runs on @utexo/rgb-lib-rn + @utexo/rgb-sdk. Tests describe one mock
       // wallet under '@utexo/rgb-sdk-rn'; build the L1 engine and facade from it.
       const sdk = modules['@utexo/rgb-sdk-rn'] ?? {};
