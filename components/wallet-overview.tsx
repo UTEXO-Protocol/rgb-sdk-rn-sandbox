@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react';
+import Constants from 'expo-constants';
+import { WalletRefreshDiagnosticsCard } from './wallet-refresh-diagnostics';
 import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
-import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
+import { demoWallet, type DemoWalletState } from '@/utils/wallet';
 import { mockFaucetEnabled } from '@/utils/mock-faucet';
 import { WalletBurn } from './wallet-burn';
+import { WalletSend } from './wallet-send';
+import { canSendAsset } from '@/utils/wallet/send';
 import { LOCAL_BURN_ORIGIN, payoutChainLabel } from '@/utils/wallet/burn';
-import { canCancelInvoice, MIN_INVOICE_DURATION_MINUTES } from '@/utils/wallet/invoice';
 
-type Tab = 'Assets' | 'Receive' | 'Burn' | 'Activity' | 'Tools';
+type Tab = 'Assets' | 'Receive' | 'Send' | 'Burn' | 'Activity' | 'Tools';
 
-export function WalletButton({ title, onPress, disabled = false, destructive = false }: {
-  title: string; onPress: () => void; disabled?: boolean; destructive?: boolean;
+export function WalletButton({ title, onPress, disabled = false }: {
+  title: string; onPress: () => void; disabled?: boolean;
 }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }}
-    disabled={disabled} onPress={onPress} style={[styles.button, destructive && styles.destructiveButton, disabled && styles.disabled]}>
-    <Text style={[styles.buttonText, destructive && styles.error]}>{title}</Text>
+    disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}>
+    <Text style={styles.buttonText}>{title}</Text>
   </Pressable>;
 }
 
@@ -30,18 +33,17 @@ function BalanceRows({ balance, unit }: {
   </View>;
 }
 
-export function WalletOverview({ state, wallet }: { state: DemoWalletState; wallet: DemoWalletService }) {
+export function WalletOverview({ state }: { state: DemoWalletState }) {
   const [tab, setTab] = useState<Tab>('Assets');
   const [amount, setAmount] = useState('');
   const [assetId, setAssetId] = useState('');
   const [burnAssetId, setBurnAssetId] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState(String(MIN_INVOICE_DURATION_MINUTES));
+  const [sendAssetId, setSendAssetId] = useState('');
+  const [durationMinutes, setDurationMinutes] = useState('1440');
   const [feedback, setFeedback] = useState('');
   const [now, setNow] = useState(Date.now());
   const disabled = state.busy || !!state.prompt || !!state.activeRequest;
   const invoice = state.invoice;
-  const faucetEnabled = state.protocol === 'RGB_LN' && mockFaucetEnabled(state.network);
-  const selectedBfa = state.assets.find((asset) => asset.assetId === assetId)?.schema === 'BFA';
   const expired = !!invoice?.expirationTimestamp && invoice.expirationTimestamp * 1000 <= now;
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
 
   return <View style={styles.card}>
     <View style={styles.tabs}>
-      {(['Assets', 'Receive', 'Burn', 'Activity', 'Tools'] as const).map((value) =>
+      {(['Assets', 'Receive', 'Send', 'Burn', 'Activity', 'Tools'] as const).map((value) =>
         <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }}
           style={[styles.tab, tab === value && styles.selectedTab]} onPress={() => { setTab(value); setFeedback(''); }}>
           <Text style={[styles.text, tab === value && styles.selectedText]}>{value}</Text>
@@ -87,6 +89,8 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
         <Text selectable style={styles.mono}>{asset.assetId}</Text>
         <WalletButton title={`Receive ${asset.ticker || asset.name}`} disabled={disabled}
           onPress={() => { setAssetId(asset.assetId); if (asset.schema === 'BFA') setAmount(''); setTab('Receive'); setFeedback(''); }} />
+        {canSendAsset(asset) && <WalletButton title={`Send ${asset.ticker || asset.name}`} disabled={disabled}
+          onPress={() => { setSendAssetId(asset.assetId); setTab('Send'); setFeedback(''); }} />}
         {asset.schema === 'BFA' && <WalletButton title={`Burn ${asset.ticker || asset.name}`} disabled={disabled || !state.burnAvailable}
           onPress={() => { setBurnAssetId(asset.assetId); setTab('Burn'); setFeedback(''); }} />}
       </View>)}
@@ -116,17 +120,13 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
       <Text style={styles.label}>Amount in base units (optional)</Text>
       <TextInput accessibilityLabel="Receive amount in base units" value={amount} onChangeText={setAmount}
         placeholder="Any amount" placeholderTextColor={C.textTertiary} keyboardType="number-pad"
-        editable={!disabled && !selectedBfa} style={[styles.input, selectedBfa && styles.disabled]} />
-      {selectedBfa && <Text style={styles.text}>
-        This BFA currently supports invoices with an open amount. To request a fixed amount, choose Any / new asset.
-      </Text>}
+        editable={!disabled} style={styles.input} />
       <Text style={styles.label}>Invoice expiry in minutes</Text>
       <TextInput accessibilityLabel="Invoice expiry in minutes" value={durationMinutes} onChangeText={setDurationMinutes}
         keyboardType="number-pad" editable={!disabled} style={styles.input} />
-      <Text style={styles.hint}>Minimum {MIN_INVOICE_DURATION_MINUTES} minutes (3 hours) to allow time for minting.</Text>
       <Text style={styles.hint}>3 confirmations required. Prepare receive UTXOs in Tools if needed.</Text>
       <WalletButton title="Generate invoice" disabled={disabled}
-        onPress={() => { setFeedback(''); void wallet.generateInvoice({ amount, assetId, durationMinutes }); }} />
+        onPress={() => { setFeedback(''); void demoWallet.generateInvoice({ amount, assetId, durationMinutes }); }} />
       {invoice && <View style={styles.item}>
         <Text style={styles.heading}>{expired ? 'Last invoice · expired' : 'Last receive invoice'}</Text>
         <Text style={styles.text}>{invoice.source}</Text>
@@ -149,7 +149,8 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
       </View>
     </>}
 
-    {tab === 'Burn' && <WalletBurn state={state} wallet={wallet} initialAssetId={burnAssetId} />}
+    {tab === 'Send' && <WalletSend state={state} initialAssetId={sendAssetId} />}
+    {tab === 'Burn' && <WalletBurn state={state} initialAssetId={burnAssetId} />}
 
     {tab === 'Activity' && <>
       <Text style={styles.heading}>Recent RGB transfers</Text>
@@ -161,23 +162,15 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
           <Text style={styles.assetName}>{transfer.kind}</Text>
           <Text style={[styles.badge, transfer.status === 'Settled' && styles.success, transfer.status === 'Failed' && styles.error]}>{transfer.status}</Text>
         </View>
-        <Text style={styles.text}>{state.assets.find((asset) => asset.assetId === transfer.assetId)?.ticker || transfer.assetId || 'Any / new asset'}</Text>
+        {transfer.kind === 'Send' && transfer.status === 'WaitingCounterparty' && <Text style={styles.hint}>Waiting for the receiving wallet to verify the transfer. Refresh the receiving wallet, then refresh this wallet.</Text>}
+        <Text style={styles.text}>{state.assets.find((asset) => asset.assetId === transfer.assetId)?.ticker || transfer.assetId}</Text>
         {transfer.amountBaseUnits !== undefined &&
           <Text style={styles.text}>{transfer.amountBaseUnits} base units</Text>}
         {transfer.kind === 'Burn' && transfer.amountBaseUnits === undefined &&
           <Text style={styles.hint}>Burn amount unavailable</Text>}
-        {(transfer.kind === 'ReceiveBlind' || transfer.kind === 'ReceiveWitness') && <>
-          <Text style={styles.hint}>Invoice #{transfer.idx}</Text>
-          {!!transfer.expiration && <Text style={styles.hint}>
-            Expires {new Date(transfer.expiration * 1000).toLocaleString()}
-          </Text>}
-        </>}
         {!!transfer.createdAt && <Text style={styles.hint}>{new Date(transfer.createdAt * 1000).toLocaleString()}</Text>}
         <Text selectable style={styles.mono}>{transfer.txid || transfer.recipientId || `Transfer ${transfer.idx}`}</Text>
         {transfer.txid && <WalletButton title="Copy transaction ID" onPress={() => { void copy(transfer.txid!, 'Transaction ID'); }} />}
-        {state.protocol === 'RGB_L1' && canCancelInvoice(transfer) &&
-          <WalletButton title="Cancel invoice" destructive disabled={disabled}
-            onPress={() => { void wallet.cancelInvoice(transfer.idx); }} />}
       </View>)}
       {state.transfers.length > 20 && <Text style={styles.hint}>Showing the 20 most recent transfers.</Text>}
       {!!state.burns.length && <Text style={styles.heading}>Burn operations</Text>}
@@ -201,20 +194,18 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
     </>}
 
     {tab === 'Tools' && <>
-      <Text style={styles.heading}>RGB UTXO setup</Text>
+      {!!state.refreshDiagnostics && <WalletRefreshDiagnosticsCard report={state.refreshDiagnostics} appVersion={Constants.expoConfig?.version || 'unknown'} />}
+      <Text style={styles.heading}>Receive setup</Text>
       <Text style={styles.text}>Fund your BTC address, then create receive UTXOs. Creating them uses a Bitcoin transaction at 2 sat/vB.</Text>
       <Text selectable style={styles.mono}>{state.address}</Text>
       <WalletButton title="Copy BTC address" onPress={() => { void copy(state.address, 'BTC address'); }} />
-      {faucetEnabled && <>
+      {mockFaucetEnabled(state.network) && <>
         <Text style={styles.hint}>Regtest mock faucet · test tokens, no EVM backing.</Text>
-        <WalletButton title="Get test BTC" disabled={disabled} onPress={() => { void wallet.mockFundOrMine('fund'); }} />
+        <WalletButton title="Get test BTC" disabled={disabled} onPress={() => { void demoWallet.mockFundOrMine('fund'); }} />
       </>}
-      <WalletButton title="Prepare receive UTXOs" disabled={disabled} onPress={() => { void wallet.prepareReceive(); }} />
-      <Text style={styles.hint}>Prepare tops up to 4 outputs with allocation slots. If a burn reports InsufficientAllocationSlots, create additional outputs; existing ones may hold assets, be reserved, or have too little BTC for fees.</Text>
-      <WalletButton title="Create 4 additional UTXOs" disabled={disabled}
-        onPress={() => { void wallet.prepareReceive('additional'); }} />
-      {faucetEnabled && <WalletButton title="Mine 3 regtest blocks" disabled={disabled}
-        onPress={() => { void wallet.mockFundOrMine('mine'); }} />}
+      <WalletButton title="Prepare receive UTXOs" disabled={disabled} onPress={() => { void demoWallet.prepareReceive(); }} />
+      {mockFaucetEnabled(state.network) && <WalletButton title="Mine 3 regtest blocks" disabled={disabled}
+        onPress={() => { void demoWallet.mockFundOrMine('mine'); }} />}
       <Text style={styles.text}>{state.burnAvailable ? 'Burn BFA tokens in the Burn tab or through a connected website. Saved burn proofs can be shared with the bridge through WalletConnect.' : 'BFA burn is unavailable with this native build or network configuration.'}</Text>
     </>}
     {!!feedback && <Text accessibilityLiveRegion="polite" style={styles.text}>{feedback}</Text>}
@@ -223,8 +214,8 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
 
 const styles = StyleSheet.create({
   card: { padding: 16, gap: 14, borderWidth: 1, borderColor: C.border, borderRadius: 12, backgroundColor: C.bgCard },
-  tabs: { flexDirection: 'row', gap: 3 },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 8 },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
+  tab: { flexGrow: 1, flexBasis: '30%', alignItems: 'center', paddingVertical: 10, borderRadius: 8 },
   selectedTab: { backgroundColor: C.primaryBg, borderColor: C.primary },
   selectedText: { color: C.primary, fontWeight: '700' },
   row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
@@ -242,7 +233,6 @@ const styles = StyleSheet.create({
   input: { color: C.textPrimary, backgroundColor: C.bgInput, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: C.border, minHeight: 46 },
   button: { backgroundColor: C.primaryBg, borderColor: C.primary, borderWidth: 1, padding: 13, borderRadius: 8, alignItems: 'center' },
   buttonText: { color: C.textPrimary, fontWeight: '600', fontSize: 14 },
-  destructiveButton: { backgroundColor: 'transparent', borderColor: C.error },
   disabled: { opacity: 0.4 },
   error: { color: C.error, lineHeight: 21 },
   success: { color: C.success },

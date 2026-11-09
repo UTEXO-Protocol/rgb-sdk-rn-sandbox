@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
-    "version": "1.0.0",
+    "name": "Utexo BFA Dev Next",
+    "slug": "utexo-bfa-dev-next",
+    "version": "1.0.0-bfa.devnext.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "utexobfadevnext",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -22,7 +22,9 @@
       "usesCleartextTraffic": true,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.myapp"
+      "package": "com.utexo.sandbox.bfadevnext",
+      "versionCode": 4,
+      "allowBackup": false
     },
     "web": {
       "output": "static",
@@ -45,10 +47,9 @@
           "android": {
             "enableProguardInReleaseBuilds": false,
             "enableMinifyInReleaseBuilds": false,
-            "buildArchs": ["armeabi-v7a", "arm64-v8a", "x86_64"]
-          },
-          "ios": {
-            "deploymentTarget": "16.0"
+            "buildArchs": [
+              "arm64-v8a"
+            ]
           }
         }
       ],

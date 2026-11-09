@@ -1,6 +1,7 @@
-import type { AnyUtexoWallet, BurnOperationRecord, WalletProtocol, WalletTransfer } from '@utexo/rgb-sdk-rn';
+import type { UTEXOWallet, BurnOperationRecord } from '@utexo/rgb-sdk-rn';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletConnectSession } from '@utexo/webrgb-walletconnect';
+import type { WalletRefreshDiagnostics } from './refresh-diagnostics';
 
 export type WalletPrompt = {
   title: string;
@@ -10,7 +11,6 @@ export type WalletPrompt = {
   resolve: (approved: boolean) => void;
 };
 export type DemoWalletState = {
-  protocol: WalletProtocol;
   ready: boolean;
   busy: boolean;
   address: string;
@@ -26,15 +26,14 @@ export type DemoWalletState = {
     assetId?: string;
     amount?: number;
     expirationTimestamp?: number | null;
-    batchTransferIdx?: number;
-    recipientId?: string;
     source: string;
   } | null;
-  btcBalance: Awaited<ReturnType<AnyUtexoWallet['getBtcBalance']>> | null;
+  btcBalance: Awaited<ReturnType<UTEXOWallet['getBtcBalance']>> | null;
   assets: WalletAsset[];
-  transfers: (WalletTransfer & { assetId: string })[];
+  transfers: (Awaited<ReturnType<UTEXOWallet['listTransfers']>>[number] & { assetId: string })[];
   updatedAt: number | null;
   refreshing: boolean;
+  refreshDiagnostics: WalletRefreshDiagnostics | null;
   activeRequest: string;
   lastRequest: { method: string; status: 'completed' | 'failed'; error?: string } | null;
   burnAvailable: boolean;
