@@ -11,8 +11,12 @@
  *
  * It also checks that NIA, which has no burn right, is refused.
  */
-import { BurnOperations, type BurnOperationRecord } from '@utexo/rgb-sdk-rn';
-import { burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk-rn/webrgb';
+import {
+  BurnOperations,
+  burnDestinationHash,
+  createBurnDestination,
+  type BurnOperationRecord,
+} from '@utexo/rgb-sdk/webrgb';
 import { HEX_32 } from '@utexo/rgb-sdk-core/conformance';
 
 import { assert, assertEq } from '../harness';

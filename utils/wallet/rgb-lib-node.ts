@@ -1,11 +1,13 @@
 import {
   CallbackRgbLibKeyProvider,
-  createWallet,
-  UTEXOWallet,
+  generateKeys,
+  RgbLibWallet,
   type RgbLibUnlockParams,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-lib-rn';
+import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
+import type { RgbLibUtexoWallet } from './wallets';
 import {
   MAINNET_INDEXER_URL,
   MAINNET_PROXY_ENDPOINT,
@@ -98,7 +100,7 @@ export function describeRgbLibConfiguration(network: DemoWalletNetwork) {
 }
 
 // A failed native cleanup still owns the directory; retain it until cleanup succeeds.
-const pendingCleanup = new Map<DemoWalletNetwork, UTEXOWallet<'RGB_L1'>>();
+const pendingCleanup = new Map<DemoWalletNetwork, RgbLibUtexoWallet>();
 
 async function closePendingWallet(network: DemoWalletNetwork) {
   const pending = pendingCleanup.get(network);
@@ -121,7 +123,7 @@ export async function deleteSavedRgbLibWallet(network: DemoWalletNetwork) {
   await SecureStore.deleteItemAsync(`${key}-deleting`);
 }
 
-export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedWallet?: UTEXOWallet<'RGB_L1'>) {
+export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedWallet?: RgbLibUtexoWallet) {
   const key = credentialsKey(network);
   if (await SecureStore.getItemAsync(`${key}-deleting`)) {
     throw new Error('Wallet deletion is incomplete. Retry Delete wallet before opening a new wallet.');
@@ -131,26 +133,28 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
   let wallet = stoppedWallet;
   if (!wallet) {
     if (!(await SecureStore.getItemAsync(key))) {
-      const { mnemonic } = await createWallet(network);
+      const { mnemonic } = await generateKeys(network);
       // Persist before native state is created, including on a failed first unlock.
       await SecureStore.setItemAsync(key, mnemonic);
     }
     const directory = storageDirectory(network);
     await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
-    wallet = new UTEXOWallet({
-      protocol: 'RGB_L1',
-      params: {
+    // Same storage directory, keys and params as @utexo/rgb-sdk-rn beta.40:
+    // wallets created by the earlier demo open unchanged.
+    const engine = new RgbLibWallet(
+      {
         network,
         storageDirPath: directory.replace(/^file:\/\//, ''),
         witnessVersion: 'taproot',
         reuseAddresses: true,
       },
-      keys: new CallbackRgbLibKeyProvider(async () => {
+      new CallbackRgbLibKeyProvider(async () => {
         const mnemonic = await SecureStore.getItemAsync(key);
         if (!mnemonic) throw new Error('The saved RGB Lib wallet keys are unavailable.');
         return mnemonic;
       }),
-    });
+    );
+    wallet = new UTEXOWallet({ engine });
   }
   try {
     if (stoppedWallet) await wallet.reinit(config.unlockParams);

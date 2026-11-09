@@ -8,16 +8,17 @@
  */
 import {
   CallbackRgbLibKeyProvider,
-  UTEXOWallet,
-  createWallet,
+  RgbLibWallet as RgbLibEngine,
+  generateKeys,
   type RgbLibUnlockParams,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-lib-rn';
+import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import { documentDirectory } from 'expo-file-system/legacy';
 
 import { assert, hostUrl, waitFor, type E2EFixtures } from './harness';
 
-export type RgbLibWallet = UTEXOWallet<'RGB_L1'>;
+export type RgbLibWallet = UTEXOWallet<RgbLibEngine>;
 
 export interface RgbLibBoot {
   wallet: RgbLibWallet;
@@ -108,16 +109,17 @@ export async function bootRgbLibWallet(
   unlockParams: RgbLibUnlockParams,
   opts: { label: string; mnemonic?: string; storageDirPath?: string }
 ): Promise<RgbLibBoot> {
-  const mnemonic = opts.mnemonic ?? (await createWallet('regtest')).mnemonic;
+  const mnemonic = opts.mnemonic ?? (await generateKeys('regtest')).mnemonic;
   const storageDirPath = opts.storageDirPath ?? (await freshDir(opts.label));
   const wallet = new UTEXOWallet({
-    protocol: 'RGB_L1',
-    params: { network: 'regtest', storageDirPath, witnessVersion: 'taproot' },
-    keys: new CallbackRgbLibKeyProvider(async () => mnemonic),
+    engine: new RgbLibEngine(
+      { network: 'regtest', storageDirPath, witnessVersion: 'taproot' },
+      new CallbackRgbLibKeyProvider(async () => mnemonic),
+    ),
   });
   try {
     await wallet.init();
-    await wallet.goOnline(unlockParams);
+    await wallet.unlock(unlockParams);
   } catch (error) {
     await wallet.dispose().catch(() => undefined);
     throw error;

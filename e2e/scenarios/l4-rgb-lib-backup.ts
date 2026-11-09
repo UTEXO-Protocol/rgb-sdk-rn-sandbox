@@ -10,7 +10,7 @@
  * Replaces `ctx.sender` with the restored wallet; teardown disposes it.
  */
 import * as FileSystem from 'expo-file-system/legacy';
-import { restoreFromBackup } from '@utexo/rgb-sdk-rn';
+import { restoreFromBackup } from '@utexo/rgb-lib-rn';
 import { HEX_32 } from '@utexo/rgb-sdk-core/conformance';
 
 import { assert, assertEq } from '../harness';
