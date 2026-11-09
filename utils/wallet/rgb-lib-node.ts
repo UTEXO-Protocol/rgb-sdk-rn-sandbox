@@ -147,6 +147,8 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
         storageDirPath: directory.replace(/^file:\/\//, ''),
         witnessVersion: 'taproot',
         reuseAddresses: true,
+        // Endpoints given once; unlock() and the lazy connect use them.
+        online: config.unlockParams,
       },
       new CallbackRgbLibKeyProvider(async () => {
         const mnemonic = await SecureStore.getItemAsync(key);
@@ -157,11 +159,9 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
     wallet = new UTEXOWallet({ engine });
   }
   try {
-    if (stoppedWallet) await wallet.reinit(config.unlockParams);
-    else {
-      await wallet.init();
-      await wallet.unlock(config.unlockParams);
-    }
+    if (stoppedWallet) await wallet.reinit();
+    else await wallet.init();
+    await wallet.unlock();
     const identity = await wallet.getWalletIdentity();
     return {
       wallet,
