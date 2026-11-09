@@ -1,4 +1,6 @@
-import type { AnyUtexoWallet, BurnOperationRecord, WalletProtocol, WalletTransfer } from '@utexo/rgb-sdk-rn';
+import type { WalletProtocol, WalletTransfer } from '@utexo/rgb-lib-rn';
+import type { BurnOperationRecord } from '@utexo/rgb-sdk/webrgb';
+import type { AnyUtexoWallet } from './wallets';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletConnectSession } from '@utexo/webrgb-walletconnect';
 

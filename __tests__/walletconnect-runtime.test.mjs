@@ -1,5 +1,11 @@
-import { BurnOperations, normalizeBurnRecord } from '@utexo/rgb-sdk-rn';
-import { burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
+import {
+  BurnOperations,
+  burnDestinationHash,
+  createBurnDestination,
+  encodeEvmBurnRecipient,
+  encodeTronBurnRecipient,
+  normalizeBurnRecord,
+} from '@utexo/rgb-sdk/webrgb';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -55,7 +61,23 @@ function fixture(init, modules = {}, env = {}) {
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      // RGB_L1 runs on @utexo/rgb-lib-rn + @utexo/rgb-sdk. Tests describe one mock
+      // wallet under '@utexo/rgb-sdk-rn'; build the L1 engine and facade from it.
+      const sdk = modules['@utexo/rgb-sdk-rn'] ?? {};
+      if (name === '@utexo/rgb-lib-rn') return {
+        generateKeys: sdk.createWallet,
+        CallbackRgbLibKeyProvider: sdk.CallbackRgbLibKeyProvider,
+        RgbLibWallet: class { constructor(params, keys) { this.params = params; this.keys = keys; } },
+      };
+      if (name === '@utexo/rgb-sdk') return {
+        UTEXOWallet: function UTEXOWallet({ engine }) {
+          const wallet = new sdk.UTEXOWallet({ protocol: 'RGB_L1', params: engine.params, keys: engine.keys });
+          // The new facade's refresh() maps to the old mock's refreshTransfers().
+          wallet.refresh = (options) => wallet.refreshTransfers(options?.skipSync);
+          return wallet;
+        },
+      };
       if (name === '@walletconnect/core') return { Core: class { constructor(options) { stats.cores++; stats.coreOptions.push(options); } } };
       if (name === '@reown/walletkit') return { WalletKit: { init: (options) => {
         stats.clients++;

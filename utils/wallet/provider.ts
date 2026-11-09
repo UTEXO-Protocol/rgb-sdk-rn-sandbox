@@ -1,5 +1,5 @@
-import type { AnyUtexoWallet } from '@utexo/rgb-sdk-rn';
-import { WebRgbProvider, type WebRgbOptions } from '@utexo/rgb-sdk-rn/webrgb';
+import { WebRgbProvider, type WebRgbOptions } from '@utexo/rgb-sdk/webrgb';
+import type { AnyUtexoWallet } from './wallets';
 import type { WalletConnectBackend, WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
 import type { RgbBlindReceiveArgs } from '@utexo/webrgb';
 import { MIN_INVOICE_DURATION_SECONDS } from './invoice';

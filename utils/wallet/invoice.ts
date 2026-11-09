@@ -1,4 +1,4 @@
-import type { WalletTransfer } from '@utexo/rgb-sdk-rn';
+import type { WalletTransfer } from '@utexo/rgb-lib-rn';
 
 // Leave time for approval and bridge preparation before the one-hour mint window.
 export const MIN_INVOICE_DURATION_MINUTES = 3 * 60;

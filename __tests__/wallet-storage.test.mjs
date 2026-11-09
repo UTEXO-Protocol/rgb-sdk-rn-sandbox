@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { normalizeBurnRecord } from '@utexo/rgb-sdk-rn';
+import { normalizeBurnRecord } from '@utexo/rgb-sdk/webrgb';
 
 const source = ts.transpileModule(readFileSync(new URL('../utils/wallet/storage.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
@@ -22,7 +22,7 @@ test('wallet journal keeps its account key and migrates v1 records without losin
   vm.runInNewContext(source, {
     exports: module.exports,
     require(name) {
-      if (name === '@utexo/rgb-sdk-rn') return { normalizeBurnRecord };
+      if (name === '@utexo/rgb-sdk/webrgb') return { normalizeBurnRecord };
       assert.equal(name, '@react-native-async-storage/async-storage');
       return {
         getItem: async name => { assert.equal(name, key); return saved; },

@@ -1,4 +1,7 @@
-import { BurnOperations, UTEXOWallet } from '@utexo/rgb-sdk-rn';
+// RLN's transfer mapper still comes from @utexo/rgb-sdk-rn; WebRGB and the burn
+// journal come from @utexo/rgb-sdk/webrgb, as in the app.
+import { UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { BurnOperations } from '@utexo/rgb-sdk/webrgb';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
@@ -7,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
-import { WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk-rn/webrgb';
+import { WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk/webrgb';
 import * as invoicePolicy from '../utils/wallet/invoice.ts';
 
 const source = ts.transpileModule(
@@ -33,7 +36,7 @@ vm.runInNewContext(source, {
   Uint8Array,
   require: (name) => {
     if (name === './invoice') return invoicePolicy;
-    assert.equal(name, '@utexo/rgb-sdk-rn/webrgb');
+    assert.equal(name, '@utexo/rgb-sdk/webrgb');
     return { WebRgbProvider };
   },
 });
@@ -282,7 +285,8 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
       rlnListTransfers: async () => [{ txid, idx: 3, kind: 'Burn', status: 'Settled',
         requestedAssignment: 'Fungible(5)', assignments: ['Fungible(95)'] }],
     }, asset),
-    listTransactionsByTxid: async () => [{ txid, confirmationTime: { height: 100 } }],
+    // @utexo/rgb-sdk/webrgb reads the shared transaction list and finds the txid.
+    listTransactions: async () => [{ txid: 'cd'.repeat(32) }, { txid, confirmationTime: { height: 100 } }],
     getNetworkInfo: async () => ({ blockHeight: 102 }),
     refreshWallet: async () => {},
   };
@@ -377,6 +381,8 @@ test('revoking a request during confirmation prevents the SDK from starting burn
       burn: async () => {
         burns++;
       },
+      // Burn options need a wallet that can also export the proof.
+      getConsignment: async () => '',
     },
     {
       context,

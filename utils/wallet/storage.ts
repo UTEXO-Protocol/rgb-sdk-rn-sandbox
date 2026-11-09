@@ -3,7 +3,7 @@ import {
   normalizeBurnRecord,
   type BurnOperationRecord,
   type BurnOperationStore,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk/webrgb';
 
 /** Keep the v1 key; records migrate individually without replacing wallet data. */
 export function createBurnStore(

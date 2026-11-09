@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BurnOperations, type AnyUtexoWallet } from '@utexo/rgb-sdk-rn';
-import { WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk-rn/webrgb';
+import { BurnOperations, WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk/webrgb';
+import { isRgbLibWallet, type AnyUtexoWallet } from './wallets';
 import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
 import { isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
 import { mockFaucetEnabled, mockFaucetRequest } from '../mock-faucet';
@@ -356,7 +356,8 @@ export class DemoWalletService {
     return this.localAction('Refresh wallet', async (wallet) => {
       this.set({ refreshing: true });
       await this.operations?.retryPersistence();
-      const result = await wallet.refreshTransfers();
+      // L1 uses the facade's refresh(); RLN is still the old @utexo/rgb-sdk-rn wallet.
+      const result = isRgbLibWallet(wallet) ? await wallet.refresh() : await wallet.refreshTransfers();
       await this.readWalletData();
       const failures = Object.entries(result.transfers).flatMap(([batchId, transfer]) =>
         transfer.failure ? [`Batch ${batchId}: ${transfer.failure.name}: ${transfer.failure.message}`] : [],
