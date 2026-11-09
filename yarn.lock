@@ -2551,7 +2551,7 @@
 "@utexo/rgb-lib-rn@file:../.local-packages/utexo-rgb-lib-rn-1.0.0-beta.40.tgz":
   version "1.0.0-beta.40"
   resolved "file:../.local-packages/utexo-rgb-lib-rn-1.0.0-beta.40.tgz"
-  integrity sha512-fafabKp8ABsD5hhr5VvP0kIy4rX1bWhWYlbxpW5IziKp03p6PJ0P/D7XtSai17mWWU+50KRyedWfuL1pWnvAOQ==
+  integrity sha512-R/O1gi1LZ12Eic98zlIpW2bSLCiKnbPBti3tVMmWeJJLu6HtsRJWfWdeVDV81J95Htvp+9L6wFRiZqrNw0FVlQ==
   dependencies:
     "@scure/bip32" "^2.0.1"
 
