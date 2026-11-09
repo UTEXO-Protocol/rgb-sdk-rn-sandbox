@@ -5,17 +5,12 @@
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "@utexo/rgb-sdk-core/conformance": [
-        "./node_modules/@utexo/rgb-sdk-rn/node_modules/@utexo/rgb-sdk-core/dist/conformance/index.d.ts"
       ]
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-"types/**/*.ts"
+    "App.tsx",
+    "wallet-screen.tsx",
+    "expo-env.d.ts"
   ]
 }
