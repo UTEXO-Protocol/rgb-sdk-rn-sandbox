@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
-import { WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk/webrgb';
+import { WebRgbError, WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk/webrgb';
 import * as invoicePolicy from '../utils/wallet/invoice.ts';
 
 const source = ts.transpileModule(
@@ -37,8 +37,12 @@ vm.runInNewContext(source, {
   require: (name) => {
     if (name === './invoice') return invoicePolicy;
     assert.equal(name, '@utexo/rgb-sdk/webrgb');
-    return { WebRgbProvider };
+    return { WebRgbProvider, WebRgbError };
   },
+});
+// A journal that no test burns through.
+const emptyJournal = () => ({
+  operations: new BurnOperations({}, { readAll: async () => [], write: async () => {} }),
 });
 
 test('burn history reports the burned amount, never its change, through the real SDK provider', async () => {
@@ -66,6 +70,7 @@ test('burn history reports the burned amount, never its change, through the real
     context: { origin: 'https://bridge.example', signal: abort.signal, assertAuthorized() {} },
     confirm: async () => { throw new Error('Reading history must not request a burn'); },
     run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
   });
   const transfers = await provider.listTransfers(assetId);
   assert.equal(transfers[0].amount, 100000);
@@ -104,6 +109,7 @@ test('the installed SDK supplies exact burn amounts through the demo without a j
     context: { origin: 'https://bridge.example', network: 'utexo', signal: new AbortController().signal, assertAuthorized() {} },
     confirm: async () => { throw new Error('Reading history must not request a burn'); },
     run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
   });
   const transfers = await provider.listTransfers(assetId);
   assert.equal(transfers[0].amount, 100000);
@@ -129,6 +135,7 @@ test('receive invoices keep a three-hour mint window through SDK approval and na
     context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
     confirm: async (request) => { approvals.push(request.params); return true; },
     run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
   });
   for (const durationSeconds of [undefined, 60, 3600, 10800, 21600]) {
     const args = Object.freeze({ amount: 5, durationSeconds });
@@ -308,6 +315,7 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
         burn: {
           operations, destinationRoutes,
         },
+        burnEnabled: true,
       }),
   });
   t.after(() => host.dispose());
@@ -391,26 +399,29 @@ test('revoking a request during confirmation prevents the SDK from starting burn
         return true;
       },
       run: (_method, _args, action) => action(),
-      burn: {
-        operations: new BurnOperations({}, { readAll: async () => [], write: async () => {} }),
-      },
+      burn: emptyJournal(),
+      burnEnabled: true,
     },
   );
   await assert.rejects(provider.burnAsset(args), { code: 'NOT_ENABLED' });
   assert.equal(burns, 0);
 });
 
-test('RGB Lib without a burn extension does not advertise signing or bridge payout methods', async () => {
+test('RGB Lib that cannot burn does not advertise signing or bridge payout methods', async () => {
   const native = {
     protocol: 'RGB_L1',
     isDisposed: () => false,
     getNetwork: () => 'regtest',
-    getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    // Watch-only: burn is part of every provider, but native code cannot sign it.
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    burn: async () => { throw new Error('Must not reach unsupported burn'); },
+    getConsignment: async () => { throw new Error('Must not reach unsupported proof export'); },
     signMessage: async () => { throw new Error('Must not reach unsupported signing'); },
   };
   const provider = new WebRgbProvider(native, {
     origin: 'https://bridge.example', sessionApproved: true,
     confirm: async () => { throw new Error('No approval expected for info'); },
+    burn: emptyJournal(),
   });
   const info = await provider.getInfo();
   assert.equal(info.protocol, 'RGB_L1');
@@ -418,6 +429,7 @@ test('RGB Lib without a burn extension does not advertise signing or bridge payo
   assert.ok(!info.methods.includes('burnAsset'));
   assert.ok(!info.methods.includes('signMessage'));
   await assert.rejects(provider.signMessage('test'), { code: 'METHOD_NOT_SUPPORTED' });
+  await assert.rejects(provider.burnAsset({}), { code: 'METHOD_NOT_SUPPORTED' });
   // Run the real adapter's account validation (the two profiles use distinct prefixes).
   const events = new EventEmitter();
   const transport = createWalletConnectWallet({
@@ -428,4 +440,29 @@ test('RGB Lib without a burn extension does not advertise signing or bridge payo
     getProvider: () => provider,
   });
   transport.dispose();
+});
+
+test('demo network policy hides burn even when native code can burn', async () => {
+  let burns = 0;
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'testnet',
+    getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    burn: async () => { burns++; },
+    getConsignment: async () => '',
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://bridge.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => true,
+    run: (_method, _args, action) => action(),
+    burn: emptyJournal(),
+    burnEnabled: false,
+  });
+  const { methods } = await provider.getInfo();
+  assert.ok(!methods.includes('burnAsset'));
+  assert.ok(!methods.includes('getConsignment'));
+  await assert.rejects(provider.burnAsset({}), { code: 'METHOD_NOT_SUPPORTED' });
+  await assert.rejects(provider.getConsignment({}), { code: 'METHOD_NOT_SUPPORTED' });
+  assert.equal(burns, 0);
 });
