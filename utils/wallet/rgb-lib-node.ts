@@ -178,7 +178,7 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
         reuseAddresses: true,
         // Endpoints given once. rgb-lib connects (goOnline) lazily with them on
         // the first online operation, once per session.
-        online: config.unlockParams,
+        ...config.unlockParams,
       },
       new CallbackRgbLibKeyProvider(async () => {
         const mnemonic = await SecureStore.getItemAsync(key);
