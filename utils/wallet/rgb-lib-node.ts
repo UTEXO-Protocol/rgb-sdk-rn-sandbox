@@ -2,6 +2,8 @@ import {
   CallbackRgbLibKeyProvider,
   generateKeys,
   RgbLibWallet,
+  DEFAULT_EVM_MINT_LOCK_BLOCKS,
+  type RgbLibMintLockBlocks,
   type RgbLibUnlockParams,
 } from '@utexo/rgb-lib-rn';
 import { UTEXOWallet } from '@utexo/rgb-sdk';
@@ -24,24 +26,28 @@ function rgbLibEnv(network: DemoWalletNetwork) {
         indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL,
         proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT,
         evmJson: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS,
+        lockJson: process.env.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS,
       };
     case 'signet':
       return {
         indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_INDEXER_URL?.trim() || PUBLIC_SIGNET_INDEXER_URL,
         proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_PROXY_ENDPOINT?.trim() || PUBLIC_SIGNET_PROXY_ENDPOINT,
         evmJson: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_EVM_RPC_URLS,
+        lockJson: process.env.EXPO_PUBLIC_RGB_LIB_SIGNET_EVM_MINT_LOCK_BLOCKS,
       };
     case 'mainnet':
       return {
         indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_INDEXER_URL?.trim() || MAINNET_INDEXER_URL,
         proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_PROXY_ENDPOINT?.trim() || MAINNET_PROXY_ENDPOINT,
         evmJson: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_EVM_RPC_URLS,
+        lockJson: process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_EVM_MINT_LOCK_BLOCKS,
       };
     case 'regtest':
       return {
         indexerUrl: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL,
         proxyEndpoint: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_PROXY_ENDPOINT,
         evmJson: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_EVM_RPC_URLS,
+        lockJson: process.env.EXPO_PUBLIC_RGB_LIB_REGTEST_EVM_MINT_LOCK_BLOCKS,
       };
   }
 }
@@ -74,7 +80,27 @@ export function buildRgbLibConfig(network: DemoWalletNetwork) {
       throw new Error(`${prefix}_EVM_RPC_URLS must be a JSON object mapping EVM chain IDs to HTTP(S) RPC URLs.`);
     }
   }
-  return { network, unlockParams: { indexerUrl, proxyEndpoint, evmRpcUrls } satisfies RgbLibUnlockParams };
+  // Optional: a chain without bounds uses the SDK default (DEFAULT_EVM_MINT_LOCK_BLOCKS).
+  const lockJson = env.lockJson?.trim();
+  let evmMintLockBlocks: Record<string, RgbLibMintLockBlocks> | undefined;
+  if (lockJson) {
+    const blocks = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+    try {
+      const parsed: unknown = JSON.parse(lockJson);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+        !Object.entries(parsed).every(([chain, value]) => {
+          const entry = value as Partial<Record<keyof RgbLibMintLockBlocks, unknown>> | null;
+          return /^[1-9][0-9]*$/.test(chain) && !!entry && typeof entry === 'object' &&
+            blocks(entry.min) && blocks(entry.max) && (entry.min as number) <= (entry.max as number);
+        })) throw new Error();
+      evmMintLockBlocks = parsed as Record<string, RgbLibMintLockBlocks>;
+    } catch {
+      throw new Error(`${prefix}_EVM_MINT_LOCK_BLOCKS must be a JSON object mapping EVM chain IDs to { min, max } block counts with min <= max.`);
+    }
+    const orphan = Object.keys(evmMintLockBlocks).find((chain) => !evmRpcUrls?.[chain]);
+    if (orphan) throw new Error(`${prefix}_EVM_MINT_LOCK_BLOCKS sets chain ${orphan}, which has no entry in ${prefix}_EVM_RPC_URLS.`);
+  }
+  return { network, unlockParams: { indexerUrl, proxyEndpoint, evmRpcUrls, evmMintLockBlocks } satisfies RgbLibUnlockParams };
 }
 
 function storageDirectory(network: DemoWalletNetwork) {
@@ -93,7 +119,10 @@ export function describeRgbLibConfiguration(network: DemoWalletNetwork) {
     `Network: ${network}`,
     `Indexer: ${unlockParams.indexerUrl}`,
     `RGB proxy: ${unlockParams.proxyEndpoint}`,
-    `EVM RPC chain IDs: ${Object.keys(unlockParams.evmRpcUrls ?? {}).join(', ') || 'Not configured'}`,
+    `EVM chains: ${Object.keys(unlockParams.evmRpcUrls ?? {}).map((id) => {
+      const lock = unlockParams.evmMintLockBlocks?.[id] ?? DEFAULT_EVM_MINT_LOCK_BLOCKS;
+      return `${id} (mint lock ${lock.min}–${lock.max} blocks${unlockParams.evmMintLockBlocks?.[id] ? '' : ', default'})`;
+    }).join(', ') || 'Not configured'}`,
     'Witness: taproot',
     `Storage: ${storageDirectory(network).replace(/^file:\/\//, '')}`,
   ].join('\n');
@@ -134,7 +163,7 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
   if (!wallet) {
     if (!(await SecureStore.getItemAsync(key))) {
       const { mnemonic } = await generateKeys(network);
-      // Persist before native state is created, including on a failed first unlock.
+      // Persist before native state is created, including on a failed first open.
       await SecureStore.setItemAsync(key, mnemonic);
     }
     const directory = storageDirectory(network);
@@ -147,7 +176,8 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
         storageDirPath: directory.replace(/^file:\/\//, ''),
         witnessVersion: 'taproot',
         reuseAddresses: true,
-        // Endpoints given once; unlock() and the lazy connect use them.
+        // Endpoints given once. rgb-lib connects (goOnline) lazily with them on
+        // the first online operation, once per session.
         online: config.unlockParams,
       },
       new CallbackRgbLibKeyProvider(async () => {
@@ -159,9 +189,9 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
     wallet = new UTEXOWallet({ engine });
   }
   try {
+    // No explicit connect: the first online read (balances) runs goOnline.
     if (stoppedWallet) await wallet.reinit();
     else await wallet.init();
-    await wallet.unlock();
     const identity = await wallet.getWalletIdentity();
     return {
       wallet,

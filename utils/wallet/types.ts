@@ -1,8 +1,12 @@
-import type { WalletProtocol, WalletTransfer } from '@utexo/rgb-lib-rn';
+import type { WalletProtocol } from '@utexo/rgb-lib-rn';
+// The shared contract type: the list holds transfers from either engine.
+import type { WalletTransfer } from '@utexo/rgb-sdk-core';
 import type { BurnOperationRecord } from '@utexo/rgb-sdk/webrgb';
 import type { AnyUtexoWallet } from './wallets';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletConnectSession } from '@utexo/webrgb-walletconnect';
+
+export type InvoiceKind = 'blind' | 'witness';
 
 export type WalletPrompt = {
   title: string;
@@ -30,6 +34,8 @@ export type DemoWalletState = {
     expirationTimestamp?: number | null;
     batchTransferIdx?: number;
     recipientId?: string;
+    /** Blind (default) or witness receive. */
+    kind?: InvoiceKind;
     source: string;
   } | null;
   btcBalance: Awaited<ReturnType<AnyUtexoWallet['getBtcBalance']>> | null;
