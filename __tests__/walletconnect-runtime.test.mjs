@@ -77,10 +77,15 @@ function fixture(init, modules = {}, env = {}) {
           const wallet = new sdk.UTEXOWallet({ protocol: 'RGB_L1', params: engine.params, keys: engine.keys });
           // The new facade's refresh() maps to the old mock's refreshTransfers().
           wallet.refresh = (options) => wallet.refreshTransfers(options?.skipSync);
-          // The engine's constructor `online` is what unlock()/reinit() use without params.
+          // The engine's constructor connection settings are what unlock()/reinit() use without params.
+          const connection = Object.fromEntries(
+            ['indexer', 'indexerUrl', 'proxyEndpoint', 'evmRpcUrls', 'evmMintLockBlocks', 'proxyAuthKeys']
+              .filter((key) => engine.params[key] !== undefined)
+              .map((key) => [key, engine.params[key]]),
+          );
           for (const method of ['unlock', 'reinit']) {
             const original = wallet[method].bind(wallet);
-            wallet[method] = (params) => original(params ?? engine.params.online);
+            wallet[method] = (params) => original(params ?? (Object.keys(connection).length ? connection : undefined));
           }
           return wallet;
         },
