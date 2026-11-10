@@ -69,6 +69,7 @@ function fixture(init, modules = {}, env = {}) {
       if (name === '@utexo/rgb-lib-rn') return {
         generateKeys: sdk.createWallet,
         CallbackRgbLibKeyProvider: sdk.CallbackRgbLibKeyProvider,
+        DEFAULT_EVM_MINT_LOCK_BLOCKS: Object.freeze({ min: 1200, max: 28800 }),
         RgbLibWallet: class { constructor(params, keys) { this.params = params; this.keys = keys; } },
       };
       if (name === '@utexo/rgb-sdk') return {
@@ -303,6 +304,10 @@ function nativeWalletFixture(initError, options = {}) {
           native.invoices.push(params);
           return { invoice: 'rgb:test-invoice', expirationTimestamp: 1234567890 };
         }
+        async witnessReceive(params) {
+          native.invoices.push({ ...params, witness: true });
+          return { invoice: 'rgb:test-witness-invoice', expirationTimestamp: 1234567890 };
+        }
         async dispose() { calls.push('dispose'); await options.dispose?.(); }
       },
     },
@@ -343,6 +348,14 @@ test('Open wallet also unlocks after first-time node initialization succeeds', a
   await wallet.start();
   assert.deepEqual(calls, ['init', 'unlock']);
   assert.equal(wallet.snapshot().ready, true);
+});
+
+test('RGB Lib opens without an explicit connect; rgb-lib goOnline runs lazily', async () => {
+  const { load, calls } = nativeWalletFixture();
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  assert.equal(wallet.snapshot().ready, true);
+  assert.equal(calls.filter((call) => call === 'unlock').length, 0);
 });
 
 test('Open wallet reports unrelated init failures without attempting unlock', async () => {
@@ -466,6 +479,29 @@ test('local invoices validate amount, asset and expiry before allocating a recei
   assert.equal(native.invoices[1].amount, undefined);
   assert.equal(native.invoices[1].assetId, undefined);
   assert.equal(native.invoices[1].durationSeconds, 21600);
+});
+
+test('RGB Lib creates witness invoices; the RLN wallet refuses them', async () => {
+  const { load, native } = nativeWalletFixture();
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180', kind: 'witness' });
+  assert.deepEqual(JSON.parse(JSON.stringify(native.invoices[0])), {
+    amount: 5, durationSeconds: 10800, minConfirmations: 3, witness: true,
+  });
+  assert.equal(wallet.snapshot().invoice.invoice, 'rgb:test-witness-invoice');
+  assert.equal(wallet.snapshot().invoice.kind, 'witness');
+  // Blind stays the default.
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180' });
+  assert.equal(native.invoices[1].witness, undefined);
+  assert.equal(wallet.snapshot().invoice.kind, 'blind');
+
+  const rln = nativeWalletFixture();
+  const rlnWallet = rln.load();
+  await rlnWallet.start();
+  await rlnWallet.generateInvoice({ amount: '5', durationMinutes: '180', kind: 'witness' });
+  assert.match(rlnWallet.snapshot().error, /RGB Lib tab/);
+  assert.equal(rln.native.invoices.length, 0);
 });
 
 test('BFA receive preserves the asset constraint and never silently removes a requested amount', async () => {
@@ -1263,11 +1299,32 @@ test('RGB Lib requires explicit per-network endpoints and chain IDs instead of i
   };
   const config = fixture(undefined, {}, configured).loadRgbConfig();
   assert.equal(config('utexo').unlockParams.evmRpcUrls, undefined);
+  assert.equal(config('utexo').unlockParams.evmMintLockBlocks, undefined);
   assert.throws(() => config('regtest'), /EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL/);
-  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"1":"https://evm.example"}';
-  assert.equal(fixture(undefined, {}, configured).loadRgbConfig()('utexo').unlockParams.evmRpcUrls['1'], 'https://evm.example');
+  const params = () => fixture(undefined, {}, configured).loadRgbConfig()('utexo').unlockParams;
+  // The config comes from another vm realm; compare its JSON shape.
+  const json = (value) => JSON.parse(JSON.stringify(value));
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"1":"https://evm.example","42161":"https://arb.example"}';
+  // Bounds are optional; the SDK applies its defaults to chains without them.
+  assert.equal(params().evmRpcUrls['1'], 'https://evm.example');
+  assert.equal(params().evmMintLockBlocks, undefined);
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS = '{"42161":{"min":100,"max":200}}';
+  assert.deepEqual(json(params().evmMintLockBlocks), { 42161: { min: 100, max: 200 } });
+  for (const bad of [
+    '{"42161":{"min":300,"max":200}}',
+    '{"42161":{"min":100}}',
+    '{"42161":{"min":-1,"max":200}}',
+    '{"42161":"1200"}',
+    '{"guess":{"min":1,"max":2}}',
+  ]) {
+    configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS = bad;
+    assert.throws(params, /EVM_MINT_LOCK_BLOCKS must be a JSON object/);
+  }
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS = '{"5":{"min":1,"max":2}}';
+  assert.throws(params, /chain 5, which has no entry in EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS/);
+  delete configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS;
   configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"guess":"https://evm.example"}';
-  assert.throws(() => fixture(undefined, {}, configured).loadRgbConfig()('utexo'), /mapping EVM chain IDs/);
+  assert.throws(params, /mapping EVM chain IDs/);
 });
 
 test('failure after opening RGB Lib retains ownership until native cleanup succeeds', async () => {

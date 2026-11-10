@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
 import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
+import type { InvoiceKind } from '@/utils/wallet/types';
 import { mockFaucetEnabled } from '@/utils/mock-faucet';
 import { WalletBurn } from './wallet-burn';
 import { LOCAL_BURN_ORIGIN, payoutChainLabel } from '@/utils/wallet/burn';
@@ -36,6 +37,7 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
   const [assetId, setAssetId] = useState('');
   const [burnAssetId, setBurnAssetId] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(String(MIN_INVOICE_DURATION_MINUTES));
+  const [invoiceKind, setInvoiceKind] = useState<InvoiceKind>('blind');
   const [feedback, setFeedback] = useState('');
   const [now, setNow] = useState(Date.now());
   const disabled = state.busy || !!state.prompt || !!state.activeRequest;
@@ -113,6 +115,18 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
             <Text style={styles.text}>{assetId === asset.assetId ? '●' : '○'} {asset.name}</Text>
           </Pressable>)}
       </View>
+      {state.protocol === 'RGB_L1' && <>
+        <Text style={styles.label}>Invoice type</Text>
+        <View style={styles.group}>
+          {([['blind', 'Blind', 'Receive on a blinded UTXO of this wallet. Needs a free receive UTXO (Tools).'],
+            ['witness', 'Witness', 'Receive on a new output of the sender\'s transaction. No receive UTXO needed; the sender pays its sats.']] as const).map(([value, label, hint]) =>
+            <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: invoiceKind === value, disabled }}
+              disabled={disabled} onPress={() => setInvoiceKind(value)} style={[styles.choice, invoiceKind === value && styles.selectedTab]}>
+              <Text style={styles.text}>{invoiceKind === value ? '●' : '○'} {label}</Text>
+              <Text style={styles.hint}>{hint}</Text>
+            </Pressable>)}
+        </View>
+      </>}
       <Text style={styles.label}>Amount in base units (optional)</Text>
       <TextInput accessibilityLabel="Receive amount in base units" value={amount} onChangeText={setAmount}
         placeholder="Any amount" placeholderTextColor={C.textTertiary} keyboardType="number-pad"
@@ -124,11 +138,16 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
       <TextInput accessibilityLabel="Invoice expiry in minutes" value={durationMinutes} onChangeText={setDurationMinutes}
         keyboardType="number-pad" editable={!disabled} style={styles.input} />
       <Text style={styles.hint}>Minimum {MIN_INVOICE_DURATION_MINUTES} minutes (3 hours) to allow time for minting.</Text>
-      <Text style={styles.hint}>3 confirmations required. Prepare receive UTXOs in Tools if needed.</Text>
-      <WalletButton title="Generate invoice" disabled={disabled}
-        onPress={() => { setFeedback(''); void wallet.generateInvoice({ amount, assetId, durationMinutes }); }} />
+      <Text style={styles.hint}>{invoiceKind === 'witness' && state.protocol === 'RGB_L1'
+        ? '3 confirmations required.'
+        : '3 confirmations required. Prepare receive UTXOs in Tools if needed.'}</Text>
+      <WalletButton title={invoiceKind === 'witness' && state.protocol === 'RGB_L1' ? 'Generate witness invoice' : 'Generate invoice'} disabled={disabled}
+        onPress={() => {
+          setFeedback('');
+          void wallet.generateInvoice({ amount, assetId, durationMinutes, kind: state.protocol === 'RGB_L1' ? invoiceKind : 'blind' });
+        }} />
       {invoice && <View style={styles.item}>
-        <Text style={styles.heading}>{expired ? 'Last invoice · expired' : 'Last receive invoice'}</Text>
+        <Text style={styles.heading}>{expired ? 'Last invoice · expired' : invoice.kind === 'witness' ? 'Last witness invoice' : 'Last receive invoice'}</Text>
         <Text style={styles.text}>{invoice.source}</Text>
         <Text style={styles.text}>{invoice.amount === undefined ? 'Any amount' : `${invoice.amount} base units`}</Text>
         <Text selectable style={styles.hint}>{invoice.assetId || 'Any / new asset'}</Text>
