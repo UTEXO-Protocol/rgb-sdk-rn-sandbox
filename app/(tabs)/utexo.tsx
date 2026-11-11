@@ -16,7 +16,7 @@ import { AppColors } from '@/constants/theme';
 import { buildRegtestConfig, buildUtexoConfig } from '@/utils/env';
 import { waitForAssetSpendable } from '@/utils/flow-core';
 import { mine, sendToAddress } from '@/utils/wallet-flow';
-import { createWallet, PasswordRLNSigner, UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { createWallet, PasswordRLNSigner, UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
 
 // ── UTEXO node credentials (set in .env.local) ───────────────────────────────
 const UTEXO_UNLOCK = buildUtexoConfig().unlockParams;

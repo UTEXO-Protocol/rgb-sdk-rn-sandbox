@@ -22,7 +22,7 @@ import {
   createWallet,
   PasswordRLNSigner,
   UTEXOWallet,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 
 import { formatAssetAmount, normHash, short, sleep, type LogEntry, type Phase } from '../apay/config';
 import { faucet } from './daemons';

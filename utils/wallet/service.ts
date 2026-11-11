@@ -356,7 +356,7 @@ export class DemoWalletService {
     return this.localAction('Refresh wallet', async (wallet) => {
       this.set({ refreshing: true });
       await this.operations?.retryPersistence();
-      // L1 uses the facade's refresh(); RLN is still the old @utexo/rgb-sdk-rn wallet.
+      // L1 uses the facade's refresh(); RLN is still the old wallet (@utexo/rgb-sdk-rn-rln).
       const result = isRgbLibWallet(wallet) ? await wallet.refresh() : await wallet.refreshTransfers();
       await this.readWalletData();
       const failures = Object.entries(result.transfers).flatMap(([batchId, transfer]) =>

@@ -7,7 +7,7 @@ import {
   PasswordRLNSigner,
   UTEXOWallet,
   type LspGetInfoResponse,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 
 import {
   ASSET_ID, CHANNEL_TIMEOUT_MS, FAUCET_AMOUNT_SAT,

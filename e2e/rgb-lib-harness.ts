@@ -11,7 +11,7 @@ import {
   RgbLibWallet as RgbLibEngine,
   generateKeys,
   type RgbLibUnlockParams,
-} from '@utexo/rgb-lib-rn';
+} from '@utexo/rgb-sdk-rn';
 import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import { documentDirectory } from 'expo-file-system/legacy';

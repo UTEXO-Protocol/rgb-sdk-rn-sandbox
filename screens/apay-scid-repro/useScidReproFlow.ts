@@ -40,7 +40,7 @@ import {
   createWallet,
   PasswordRLNSigner,
   UTEXOWallet,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 
 import { daemonPost, faucet, lspDaemon } from '../lsp-regtest/daemons';
 import {
