@@ -2548,17 +2548,10 @@
     "@urql/core" "^5.1.2"
     wonka "^6.3.2"
 
-"@utexo/rgb-lib-rn@file:../.local-packages/utexo-rgb-lib-rn-1.0.0-beta.40.tgz":
-  version "1.0.0-beta.40"
-  resolved "file:../.local-packages/utexo-rgb-lib-rn-1.0.0-beta.40.tgz"
-  integrity sha512-wRJ356LJXCjRu9+sYb6z2XV0VdEwZihwUKAHscg0YW02NNbaoE0aSdyweTgImWeLtjAN3QrTTwbNoPnNq3t5jQ==
-  dependencies:
-    "@scure/bip32" "^2.0.1"
-
 "@utexo/rgb-sdk-core@^0.1.0", "@utexo/rgb-sdk-core@file:../.local-packages/utexo-rgb-sdk-core-0.1.0.tgz":
   version "0.1.0"
   resolved "file:../.local-packages/utexo-rgb-sdk-core-0.1.0.tgz"
-  integrity sha512-6k2UdP2FsQLHlIp3aSYEFonRDvRnlwsYbt+NB/D6BL+bnAgseUAf+jKCyDpfkXfFEMPlXRDDHJSMwN569+XGRg==
+  integrity sha512-U3iGhNNQDYYWciO1IDXVF8HegJvE0/8mu/H2YWVw4nDKC4RbmgSFg709lUYMZhEaLQxt3Jg2zBUcqVW1ibcv0A==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "3.0.0"
@@ -2575,7 +2568,7 @@
     "@scure/bip32" "^2.0.1"
     "@scure/bip39" "^2.0.1"
 
-"@utexo/rgb-sdk-rn@1.0.0-beta.40":
+"@utexo/rgb-sdk-rn-rln@npm:@utexo/rgb-sdk-rn@1.0.0-beta.40":
   version "1.0.0-beta.40"
   resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.40.tgz"
   integrity sha512-jHRCapvbXgojaBVXNfR9VZwQMYYsRJoB15+Zf9GBqLCkNGYZ+MWyJymPfs6SR5hBlwdSeOULOqD57wavFmxXyQ==
@@ -2589,10 +2582,17 @@
     "@utexo/rgb-sdk-core" "1.0.0-beta.9"
     "@utexo/webrgb-walletconnect" "0.1.3"
 
+"@utexo/rgb-sdk-rn@file:../.local-packages/utexo-rgb-sdk-rn-1.0.0-beta.40.tgz":
+  version "1.0.0-beta.40"
+  resolved "file:../.local-packages/utexo-rgb-sdk-rn-1.0.0-beta.40.tgz"
+  integrity sha512-Wz5hQ9JWiAgsK9z1YREUjTee6AMa3wLroPDwxXqrYUcOBsDmYmnSH7ISUWqepOHgdJEO9qg+CDSGV7eHoXNDOA==
+  dependencies:
+    "@scure/bip32" "^2.0.1"
+
 "@utexo/rgb-sdk@file:../.local-packages/utexo-rgb-sdk-2.0.0-alpha.0.tgz":
   version "2.0.0-alpha.0"
   resolved "file:../.local-packages/utexo-rgb-sdk-2.0.0-alpha.0.tgz"
-  integrity sha512-+9iUK1mPDZtoMwb65Ys2hj9eSW2tthtuBqiRRlf19vuJnbnpoSLza/Nv7a94xlS1FDfMPNQNYGyHdFq38niLBA==
+  integrity sha512-WRYVCb0k0ATJV70LM6Af7vaNngsE21mJ4/F+4XFnydApTyNU8KZ0B+L2lepbgYUJa3Iiqu6p3GBzNOVnOqm72A==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@scure/base" "^2.0.0"

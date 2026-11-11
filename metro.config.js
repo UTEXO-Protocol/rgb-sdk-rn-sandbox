@@ -4,10 +4,10 @@ const { createRequire } = require('module');
 const path = require('path');
 
 /**
- * `@utexo/*` subpaths (`@utexo/rgb-sdk/webrgb`, `@utexo/rgb-sdk-rn/webrgb`,
+ * `@utexo/*` subpaths (`@utexo/rgb-sdk/webrgb`, `@utexo/rgb-sdk-rn-rln/webrgb`,
  * `@utexo/rgb-sdk-core/conformance`) exist only in package `exports`, which
  * Metro does not read here. Resolve them as Node does, from the importing file,
- * so @utexo/rgb-sdk-rn keeps its own core (1.0.0-beta.9) and the new packages
+ * so @utexo/rgb-sdk-rn-rln keeps its own core (1.0.0-beta.9) and the new packages
  * share the app's @utexo/rgb-sdk-core.
  */
 function resolveUtexoSubpath(moduleName, originModulePath) {

@@ -1,4 +1,4 @@
-import type { IRLNUnlockParams } from '@utexo/rgb-sdk-rn';
+import type { IRLNUnlockParams } from '@utexo/rgb-sdk-rn-rln';
 import { Platform } from 'react-native';
 
 export function readEnv(name: string): string | null {

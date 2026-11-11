@@ -1,4 +1,4 @@
-import type { WalletProtocol } from '@utexo/rgb-lib-rn';
+import type { WalletProtocol } from '@utexo/rgb-sdk-rn';
 // The shared contract type: the list holds transfers from either engine.
 import type { WalletTransfer } from '@utexo/rgb-sdk-core';
 import type { BurnOperationRecord } from '@utexo/rgb-sdk/webrgb';

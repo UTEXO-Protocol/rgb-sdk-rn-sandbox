@@ -1,5 +1,5 @@
 import type { BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
-import type { WalletProtocol } from '@utexo/rgb-lib-rn';
+import type { WalletProtocol } from '@utexo/rgb-sdk-rn';
 import { isRgbLibWallet, type AnyUtexoWallet } from './wallets';
 import { buildDemoWalletConfig, type DemoWalletNetwork } from '../env';
 import type { ConnectionProfile } from './connection';

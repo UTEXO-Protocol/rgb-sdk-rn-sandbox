@@ -53,7 +53,7 @@ for (const failure of [null, 'unlock', 'backup']) {
       async destroy() { events.push('destroy'); }
     }
     const flow = load('flows/vss/runRlnUtexoVssFlow.ts', {
-      '@utexo/rgb-sdk-rn': { UTEXOWallet: Wallet, createWallet: async () => ({ mnemonic: 'seed' }), PasswordRLNSigner: class {} },
+      '@utexo/rgb-sdk-rn-rln': { UTEXOWallet: Wallet, createWallet: async () => ({ mnemonic: 'seed' }), PasswordRLNSigner: class {} },
       'expo-file-system/legacy': { documentDirectory: 'file:///test/', makeDirectoryAsync: async () => {}, deleteAsync: async () => assert.fail('Probe must not wipe state') },
       '@/utils/bitcoin-node': { sendToAddressUtexo: async () => assert.fail('Probe must not request funding') },
       '@/utils/env': { buildUtexoConfig: () => ({ network: 'utexo', unlockParams: {} }) },
@@ -121,7 +121,7 @@ for (const name of ['runRlnVssFlow', 'runRlnUtexoVssFlow']) {
       core.sleep = async (ms) => { clock.now += ms; };
       const config = () => ({ network: 'regtest', unlockParams: {} });
       const flow = load(`flows/vss/${name}.ts`, {
-        '@utexo/rgb-sdk-rn': { UTEXOWallet: Wallet, createWallet: async () => ({ mnemonic: 'seed' }), PasswordRLNSigner: class {} },
+        '@utexo/rgb-sdk-rn-rln': { UTEXOWallet: Wallet, createWallet: async () => ({ mnemonic: 'seed' }), PasswordRLNSigner: class {} },
         'expo-file-system/legacy': { documentDirectory: 'file:///test/', makeDirectoryAsync: async () => {}, deleteAsync: async () => { events.push('delete'); } },
         '@/utils/bitcoin-node': { mine: async () => {}, sendToAddress: async () => 'txid', sendToAddressUtexo: async () => 'txid' },
         '@/utils/env': { buildUtexoConfig: config, buildRegtestConfig: config, readEnv: () => 'https://vss.example.test/vss' },

@@ -60,13 +60,13 @@ function fixture(init, modules = {}, env = {}) {
     process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: 'a'.repeat(32), ...env } },
     setTimeout, clearTimeout, Error,
     require: (name) => {
-      if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
+      if (name === '@utexo/rgb-sdk-rn-rln') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
       if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
-      // RGB_L1 runs on @utexo/rgb-lib-rn + @utexo/rgb-sdk. Tests describe one mock
-      // wallet under '@utexo/rgb-sdk-rn'; build the L1 engine and facade from it.
-      const sdk = modules['@utexo/rgb-sdk-rn'] ?? {};
-      if (name === '@utexo/rgb-lib-rn') return {
+      // RGB_L1 runs on @utexo/rgb-sdk-rn + @utexo/rgb-sdk. Tests describe one mock
+      // wallet under '@utexo/rgb-sdk-rn-rln'; build the L1 engine and facade from it.
+      const sdk = modules['@utexo/rgb-sdk-rn-rln'] ?? {};
+      if (name === '@utexo/rgb-sdk-rn') return {
         generateKeys: sdk.createWallet,
         CallbackRgbLibKeyProvider: sdk.CallbackRgbLibKeyProvider,
         DEFAULT_EVM_MINT_LOCK_BLOCKS: Object.freeze({ min: 1200, max: 28800 }),
@@ -230,7 +230,7 @@ function nativeWalletFixture(initError, options = {}) {
         storage.set(key, value);
       },
     },
-    '@utexo/rgb-sdk-rn': {
+    '@utexo/rgb-sdk-rn-rln': {
       createWallet: async () => {
         if (options.newRgbKeys || options.regenerateRgbKeys) return { mnemonic: ++generatedKeys === 1 ? 'new-rgb-mnemonic' : `new-rgb-mnemonic-${generatedKeys}` };
         throw new Error('Must reuse saved keys');

@@ -12,7 +12,7 @@ import { documentDirectory } from 'expo-file-system/legacy';
 import { useCallback, useRef, useState } from 'react';
 
 import { sendToAddressUtexo } from '@/utils/wallet-flow';
-import { createWallet, PasswordRLNSigner, UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { createWallet, PasswordRLNSigner, UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
 
 import {
   CHANNEL_ASSET_AMOUNT, CHANNEL_CAPACITY_SAT, CHANNEL_TIMEOUT_MS,

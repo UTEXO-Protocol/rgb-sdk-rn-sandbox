@@ -1,6 +1,6 @@
-// RLN's transfer mapper still comes from @utexo/rgb-sdk-rn; WebRGB and the burn
+// RLN's transfer mapper still comes from @utexo/rgb-sdk-rn-rln; WebRGB and the burn
 // journal come from @utexo/rgb-sdk/webrgb, as in the app.
-import { UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
 import { BurnOperations } from '@utexo/rgb-sdk/webrgb';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';

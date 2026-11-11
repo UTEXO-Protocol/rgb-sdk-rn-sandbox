@@ -9,7 +9,7 @@ import {
   UTEXOWallet,
   type LspGetInfoResponse,
   type LspPeer,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 
 import {
   ASSET_ID, CHANNEL_TIMEOUT_S, FAUCET_PAY_AMOUNT,

@@ -12,7 +12,7 @@
  * block (`invoiceStatus`, `listChannels`, `listPayments`, `estimateFeeRate`)
  * has only ever run against a stub loader here.
  */
-import { UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import { UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
 import {
   expectFields,
   expectNoWireKeys,

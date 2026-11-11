@@ -5,7 +5,7 @@ import {
   DEFAULT_EVM_MINT_LOCK_BLOCKS,
   type RgbLibMintLockBlocks,
   type RgbLibUnlockParams,
-} from '@utexo/rgb-lib-rn';
+} from '@utexo/rgb-sdk-rn';
 import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';

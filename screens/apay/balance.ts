@@ -1,4 +1,4 @@
-import type { UTEXOWallet } from '@utexo/rgb-sdk-rn';
+import type { UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
 
 import { normHash, short, type LogEntry } from './config';
 

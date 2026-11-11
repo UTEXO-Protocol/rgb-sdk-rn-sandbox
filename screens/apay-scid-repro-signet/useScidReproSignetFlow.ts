@@ -26,7 +26,7 @@ import {
   createWallet,
   PasswordRLNSigner,
   UTEXOWallet,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 
 import { faucet } from '../apay-signet/daemons';
 import { buildReport } from '../apay-scid-repro/report';
