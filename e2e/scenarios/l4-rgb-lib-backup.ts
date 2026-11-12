@@ -21,13 +21,13 @@ import {
   settle,
   settledBalance,
   type RgbLibScenarioContext,
-  type RgbLibWallet,
+  type RgbLibRn,
 } from '../rgb-lib-harness';
 
 const PASSWORD = 'e2e-backup-password';
 const SEND_AFTER_RESTORE = 10;
 
-async function snapshot(wallet: RgbLibWallet) {
+async function snapshot(wallet: RgbLibRn) {
   const assets = await wallet.listAssets();
   const ids = [...assets.nia, ...assets.ifa, ...assets.cfa, ...assets.uda, ...assets.bfa]
     .map((a) => a.assetId)

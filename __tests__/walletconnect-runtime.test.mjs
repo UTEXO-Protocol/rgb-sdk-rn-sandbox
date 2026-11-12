@@ -70,7 +70,7 @@ function fixture(init, modules = {}, env = {}) {
         generateKeys: sdk.createWallet,
         CallbackRgbLibKeyProvider: sdk.CallbackRgbLibKeyProvider,
         DEFAULT_EVM_MINT_LOCK_BLOCKS: Object.freeze({ min: 1200, max: 28800 }),
-        RgbLibWallet: class { constructor(params, keys) { this.params = params; this.keys = keys; } },
+        RgbLibRn: class { constructor(params, keys) { this.params = params; this.keys = keys; } },
       };
       if (name === '@utexo/rgb-sdk') return {
         UTEXOWallet: function UTEXOWallet({ engine }) {
