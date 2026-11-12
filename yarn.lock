@@ -2548,10 +2548,10 @@
     "@urql/core" "^5.1.2"
     wonka "^6.3.2"
 
-"@utexo/rgb-sdk-core@^0.1.0", "@utexo/rgb-sdk-core@file:../.local-packages/utexo-rgb-sdk-core-0.1.0.tgz":
-  version "0.1.0"
-  resolved "file:../.local-packages/utexo-rgb-sdk-core-0.1.0.tgz"
-  integrity sha512-U3iGhNNQDYYWciO1IDXVF8HegJvE0/8mu/H2YWVw4nDKC4RbmgSFg709lUYMZhEaLQxt3Jg2zBUcqVW1ibcv0A==
+"@utexo/rgb-sdk-core@^1.0.0-beta.10", "@utexo/rgb-sdk-core@1.0.0-beta.10":
+  version "1.0.0-beta.10"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-core/-/rgb-sdk-core-1.0.0-beta.10.tgz"
+  integrity sha512-FkU6EXqVkOCkKqeb608rWg1xCMOGcZfyy90+Rz+47N6CoIk+JZEr+XbYPgTTY5iy0frAPtP4//hLcopn6seDzg==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "3.0.0"
@@ -2585,14 +2585,14 @@
 "@utexo/rgb-sdk-rn@file:../.local-packages/utexo-rgb-sdk-rn-1.0.0-beta.40.tgz":
   version "1.0.0-beta.40"
   resolved "file:../.local-packages/utexo-rgb-sdk-rn-1.0.0-beta.40.tgz"
-  integrity sha512-AtYr8iitbchpd5glucTck6kqA/KFUhrFoyoWgA3y/C2tKqVlI66Dgg9vrAe+k0je+XrFInHM8lv9+ILcsTGI5w==
+  integrity sha512-ig/nDWlE/Sscn//IVa29EsNS6ohUe0OXGEvyueceEJBL/KPQtXJ4Z+OpPzDjJukzyElfOR0JCvvAzivHebqWPw==
   dependencies:
     "@scure/bip32" "^2.0.1"
 
 "@utexo/rgb-sdk@file:../.local-packages/utexo-rgb-sdk-2.0.0-alpha.0.tgz":
   version "2.0.0-alpha.0"
   resolved "file:../.local-packages/utexo-rgb-sdk-2.0.0-alpha.0.tgz"
-  integrity sha512-fNzfQGbTZk8g9XNRpY6FYCxsnhaUeLV4rju9Y5d12VbwprK+EDAJfH4HGurTqUsRc2ugqUiWY9s37RrlNz67lA==
+  integrity sha512-tM6WzXPOwlCX9Kxc2q17aH5NDwvXdbsB+wm8stNYJYNRjXdfKJdwtBIx1oVr+4TP4X3t8oVEzxuaBIQbIa6IuQ==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@scure/base" "^2.0.0"
