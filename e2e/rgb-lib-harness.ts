@@ -8,7 +8,7 @@
  */
 import {
   CallbackRgbLibKeyProvider,
-  RgbLibWallet as RgbLibEngine,
+  RgbLibRn as RgbLibEngine,
   generateKeys,
   type RgbLibUnlockParams,
 } from '@utexo/rgb-sdk-rn';
@@ -18,10 +18,10 @@ import { documentDirectory } from 'expo-file-system/legacy';
 
 import { assert, hostUrl, waitFor, type E2EFixtures } from './harness';
 
-export type RgbLibWallet = UTEXOWallet<RgbLibEngine>;
+export type RgbLibRn = UTEXOWallet<RgbLibEngine>;
 
 export interface RgbLibBoot {
-  wallet: RgbLibWallet;
+  wallet: RgbLibRn;
   mnemonic: string;
   storageDirPath: string;
 }
@@ -128,7 +128,7 @@ export async function bootRgbLibWallet(
 }
 
 /** Fund with `btc`, confirm, and wait until rgb-lib sees it as settled. */
-export async function fundWallet(wallet: RgbLibWallet, btc: number): Promise<string> {
+export async function fundWallet(wallet: RgbLibRn, btc: number): Promise<string> {
   const address = await wallet.getAddress();
   const txid = await sendToAddress(address, btc);
   await mine(1);
@@ -140,7 +140,7 @@ export async function fundWallet(wallet: RgbLibWallet, btc: number): Promise<str
 }
 
 /** Create colorable UTXOs and wait for them to confirm. */
-export async function createColorableUtxos(wallet: RgbLibWallet, num: number): Promise<number> {
+export async function createColorableUtxos(wallet: RgbLibRn, num: number): Promise<number> {
   const created = await wallet.createUtxos({ num, feeRate: FEE_RATE });
   await mine(1);
   await waitFor('colorable UTXOs', async () => {
@@ -157,7 +157,7 @@ export async function createColorableUtxos(wallet: RgbLibWallet, num: number): P
  */
 export async function settle(
   label: string,
-  wallets: RgbLibWallet[],
+  wallets: RgbLibRn[],
   done: () => Promise<boolean>
 ): Promise<void> {
   await waitFor(
@@ -171,7 +171,7 @@ export async function settle(
 }
 
 /** Settled balance; 0 while the wallet has not seen the asset yet (rgb-lib: AssetNotFound). */
-export async function settledBalance(wallet: RgbLibWallet, assetId: string): Promise<number> {
+export async function settledBalance(wallet: RgbLibRn, assetId: string): Promise<number> {
   try {
     const balance = await wallet.getAssetBalance(assetId);
     return balance.settled ?? 0;

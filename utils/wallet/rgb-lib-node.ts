@@ -1,7 +1,7 @@
 import {
   CallbackRgbLibKeyProvider,
   generateKeys,
-  RgbLibWallet,
+  RgbLibRn,
   DEFAULT_EVM_MINT_LOCK_BLOCKS,
   type RgbLibMintLockBlocks,
   type RgbLibUnlockParams,
@@ -170,7 +170,7 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
     await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
     // Same storage directory, keys and params as @utexo/rgb-sdk-rn beta.40:
     // wallets created by the earlier demo open unchanged.
-    const engine = new RgbLibWallet(
+    const engine = new RgbLibRn(
       {
         network,
         storageDirPath: directory.replace(/^file:\/\//, ''),
