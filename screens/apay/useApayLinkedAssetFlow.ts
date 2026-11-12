@@ -53,7 +53,7 @@ import { documentDirectory } from 'expo-file-system/legacy';
 import { useCallback, useRef, useState } from 'react';
 
 import { mine, sendToAddress } from '@/utils/wallet-flow';
-import { createWallet, PasswordRLNSigner, UTEXOWallet, type LspPeer } from '@utexo/rgb-sdk-rn';
+import { createWallet, PasswordRLNSigner, UTEXOWallet, type LspPeer } from '@utexo/rgb-sdk-rn-rln';
 
 import { faucet } from '../lsp-regtest/daemons';
 import { logRgbBalanceDelta, logRgbBalanceSnap, snapshotRgbBalances } from './balance';

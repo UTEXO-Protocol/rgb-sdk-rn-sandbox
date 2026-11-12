@@ -3,18 +3,21 @@ const { getDefaultConfig } = require('expo/metro-config');
 const { createRequire } = require('module');
 const path = require('path');
 
-const sdkRequire = createRequire(
-  require.resolve('@utexo/rgb-sdk-rn/package.json')
-);
-const coreEntry = sdkRequire.resolve('@utexo/rgb-sdk-core');
-const coreEntries = new Map([
-  ['@utexo/rgb-sdk-core', coreEntry],
-  ['@utexo/rgb-sdk-rn/webrgb', sdkRequire.resolve('@utexo/rgb-sdk-rn/webrgb')],
-  [
-    '@utexo/rgb-sdk-core/conformance',
-    sdkRequire.resolve('@utexo/rgb-sdk-core/conformance'),
-  ],
-]);
+/**
+ * `@utexo/*` subpaths (`@utexo/rgb-sdk/webrgb`, `@utexo/rgb-sdk-rn-rln/webrgb`,
+ * `@utexo/rgb-sdk-core/conformance`) exist only in package `exports`, which
+ * Metro does not read here. Resolve them as Node does, from the importing file,
+ * so @utexo/rgb-sdk-rn-rln keeps its own core (1.0.0-beta.9) and the new packages
+ * share the app's @utexo/rgb-sdk-core.
+ */
+function resolveUtexoSubpath(moduleName, originModulePath) {
+  if (!/^@utexo\/[^/]+\/.+/.test(moduleName)) return null;
+  try {
+    return createRequire(originModulePath).resolve(moduleName);
+  } catch {
+    return null;
+  }
+}
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
@@ -45,9 +48,9 @@ config.resolver = {
         platform
       );
     }
-    const coreFile = coreEntries.get(moduleName);
-    if (coreFile) {
-      return context.resolveRequest(context, coreFile, platform);
+    const subpath = resolveUtexoSubpath(moduleName, context.originModulePath);
+    if (subpath) {
+      return context.resolveRequest(context, subpath, platform);
     }
     if (
       moduleName === './ExponentConstants' &&

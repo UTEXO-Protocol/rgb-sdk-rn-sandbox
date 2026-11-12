@@ -144,7 +144,7 @@ confirmation dialog.
 The shared UI is `components/wallet-screen.tsx`; each route passes its own
 service. `utils/wallet/profiles.ts` selects the opener and persistence namespaces.
 `utils/wallet/rgb-lib-node.ts` persists the mnemonic before native initialization
-and reads it through `CallbackRgbLibKeyProvider`. RGB Lib account identifiers
+and reads it through `CallbackRgbLibRnKeyProvider`. RGB Lib account identifiers
 use the `RGB-L1-` prefix (CAIP account characters do not allow underscores).
 Failed native cleanup retains the handle and must succeed before another open.
 
@@ -153,8 +153,11 @@ Configure a deployment compatible with the pinned rgb-lib release explicitly:
 ```dotenv
 EXPO_PUBLIC_RGB_LIB_UTEXO_INDEXER_URL=https://esplora-api.utexo.com
 EXPO_PUBLIC_RGB_LIB_UTEXO_PROXY_ENDPOINT=rpcs://rgb-proxy.dev.utexo.com/json-rpc
-# BFA mint validation requires an RPC for the source EVM chain:
+# BFA mint validation needs the source EVM chain's RPC:
 EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS={"42161":"https://arb1.arbitrum.io/rpc"}
+# Optional mint lock window (EVM blocks) per chain; the SDK default is
+# DEFAULT_EVM_MINT_LOCK_BLOCKS, {"min":1200,"max":28800}:
+# EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS={"42161":{"min":1200,"max":28800}}
 
 # Alternatively, configure the Local regtest selection:
 EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL=tcp://your-regtest-host:50001

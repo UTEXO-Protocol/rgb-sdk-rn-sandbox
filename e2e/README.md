@@ -41,7 +41,7 @@ npm run test:e2e -- --platform ios --only L1,L2,L3,L4  # iOS simulator
 | L1 | identity and network, `getBfaCapabilities`, funding, `createUtxos`, `listUnspents`, `sendBtc` moves exactly the amount to the other wallet |
 | L2 | NIA issue, `blindReceive` + `decodeRGBInvoice` + `onchainSend`, then a `witnessReceive` send; both settle with exact balances, kinds and `Settled` status |
 | L3 | the BFA send path: payout → burn destination (route `eip155:31337`) → 32-byte hash → `BurnOperations` journal → `burn` → `getConsignment` / `getConsignmentPath`; NIA burn and invalid params are refused |
-| L4 | `createBackup`, wipe the wallet directory, wrong password refused, `restoreFromBackup` into an empty directory, same assets and balances, and the restored wallet can still send |
+| L4 | `exportBackupToFile`, wipe the wallet directory, wrong password refused, `restoreBackupFromFile` into an empty directory, same assets and balances, and the restored wallet can still send |
 
 L2–L4 build on L1 (funding, UTXOs) and L2's asset; run them in order.
 

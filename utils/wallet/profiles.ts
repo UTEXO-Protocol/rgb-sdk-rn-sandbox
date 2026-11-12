@@ -1,5 +1,6 @@
-import type { BurnDestinationRoute } from '@utexo/rgb-sdk-rn/webrgb';
-import type { AnyUtexoWallet, WalletProtocol } from '@utexo/rgb-sdk-rn';
+import type { BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
+import type { WalletProtocol } from '@utexo/rgb-sdk-rn';
+import { isRgbLibWallet, type AnyUtexoWallet } from './wallets';
 import { buildDemoWalletConfig, type DemoWalletNetwork } from '../env';
 import type { ConnectionProfile } from './connection';
 import { describeWalletConfiguration, openSavedWallet } from './node';
@@ -45,7 +46,7 @@ export const rgbLibProfile: WalletProfile = {
   },
   describe: describeRgbLibConfiguration,
   open: (network, stopped) => {
-    if (stopped && stopped.protocol !== 'RGB_L1') throw new Error('Wallet profile mismatch');
+    if (stopped && !isRgbLibWallet(stopped)) throw new Error('Wallet profile mismatch');
     return openSavedRgbLibWallet(network, stopped);
   },
   deleteSaved: deleteSavedRgbLibWallet,

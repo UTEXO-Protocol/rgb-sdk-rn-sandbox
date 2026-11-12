@@ -29,7 +29,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { documentDirectory } from 'expo-file-system/legacy';
 import { useCallback, useRef, useState } from 'react';
 
-import { createWallet, PasswordRLNSigner, UTEXOWallet, type LspPeer } from '@utexo/rgb-sdk-rn';
+import { createWallet, PasswordRLNSigner, UTEXOWallet, type LspPeer } from '@utexo/rgb-sdk-rn-rln';
 
 import { logRgbBalanceDelta, logRgbBalanceSnap, snapshotRgbBalances } from '../apay/balance';
 import { formatAssetAmount, normHash, short, sleep, type LogEntry } from '../apay/config';

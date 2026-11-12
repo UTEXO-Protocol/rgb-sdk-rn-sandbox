@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BurnOperations, type AnyUtexoWallet } from '@utexo/rgb-sdk-rn';
-import { WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk-rn/webrgb';
+import { BurnOperations, WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk/webrgb';
+import { isRgbLibWallet, type AnyUtexoWallet } from './wallets';
 import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
 import { isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
 import { mockFaucetEnabled, mockFaucetRequest } from '../mock-faucet';
@@ -10,7 +10,7 @@ import { WalletConnection } from './connection';
 import { rlnProfile, rgbLibProfile, type WalletProfile } from './profiles';
 import { createBurnStore } from './storage';
 import { assertBurnBalance, formatBurnAmount, payoutChainLabel, prepareLocalBurn, type LocalBurnInput } from './burn';
-import type { DemoWalletState, WalletAsset } from './types';
+import type { DemoWalletState, InvoiceKind, WalletAsset } from './types';
 
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : 'Wallet operation failed';
@@ -356,7 +356,8 @@ export class DemoWalletService {
     return this.localAction('Refresh wallet', async (wallet) => {
       this.set({ refreshing: true });
       await this.operations?.retryPersistence();
-      const result = await wallet.refreshTransfers();
+      // L1 uses the facade's refresh(); RLN is still the old wallet (@utexo/rgb-sdk-rn-rln).
+      const result = isRgbLibWallet(wallet) ? await wallet.refresh() : await wallet.refreshTransfers();
       await this.readWalletData();
       const failures = Object.entries(result.transfers).flatMap(([batchId, transfer]) =>
         transfer.failure ? [`Batch ${batchId}: ${transfer.failure.name}: ${transfer.failure.message}`] : [],
@@ -376,8 +377,13 @@ export class DemoWalletService {
     });
   }
 
-  async generateInvoice(input: { amount: string; assetId?: string; durationMinutes: string }) {
-    return this.localAction('Create receive invoice', async (wallet) => {
+  async generateInvoice(input: { amount: string; assetId?: string; durationMinutes: string; kind?: InvoiceKind }) {
+    const kind = input.kind ?? 'blind';
+    return this.localAction(kind === 'witness' ? 'Create witness receive invoice' : 'Create receive invoice', async (wallet) => {
+      // A witness invoice receives on a new output of the sender's transaction
+      // instead of a blinded UTXO of this wallet. Only the RGB Lib tab offers it.
+      if (kind === 'witness' && wallet.protocol !== 'RGB_L1')
+        throw new Error('Witness invoices are available in the RGB Lib tab.');
       const amountText = input.amount.trim();
       const amount = amountText ? Number(amountText) : undefined;
       if (amountText && (!/^[1-9][0-9]*$/.test(amountText) || !Number.isSafeInteger(amount)))
@@ -400,15 +406,13 @@ export class DemoWalletService {
         throw new Error(
           'This BFA build requires an open amount. Leave amount empty, or select Any / new asset to request a fixed amount.',
         );
-      const result = await wallet.blindReceive({
-        assetId,
-        amount,
-        durationSeconds: minutes * 60,
-        minConfirmations: 3,
-      });
+      const request = { assetId, amount, durationSeconds: minutes * 60, minConfirmations: 3 };
+      const result = kind === 'witness'
+        ? await wallet.witnessReceive(request)
+        : await wallet.blindReceive(request);
       // Keep the generated invoice even if the subsequent balance read fails.
       this.set({
-        invoice: { ...result, assetId, amount, source: 'Created on this device' },
+        invoice: { ...result, assetId, amount, kind, source: 'Created on this device' },
         message: 'Invoice ready. Copy or share it with the sender.',
       });
       await this.readWalletData().catch((error) => {
@@ -635,9 +639,8 @@ export class DemoWalletService {
     const generation = this.generation;
     return createDemoRgbProvider(this.wallet, {
       context,
-      burn: this.state.burnAvailable
-        ? { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) }
-        : undefined,
+      burn: { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) },
+      burnEnabled: this.state.burnAvailable,
       confirm: (request: WebRgbApproval) => {
         const isBurn = request.method === 'burnAsset';
         const isProof = request.method === 'getConsignment';

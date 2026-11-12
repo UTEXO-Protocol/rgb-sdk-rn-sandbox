@@ -7,27 +7,28 @@
  * (`--only L1,L2,L3,L4`) without booting a Lightning node.
  */
 import {
-  CallbackRgbLibKeyProvider,
-  UTEXOWallet,
-  createWallet,
-  type RgbLibUnlockParams,
+  CallbackRgbLibRnKeyProvider,
+  RgbLibRn as RgbLibEngine,
+  generateKeys,
+  type RgbLibRnUnlockParams,
 } from '@utexo/rgb-sdk-rn';
+import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import { documentDirectory } from 'expo-file-system/legacy';
 
 import { assert, hostUrl, waitFor, type E2EFixtures } from './harness';
 
-export type RgbLibWallet = UTEXOWallet<'RGB_L1'>;
+export type RgbLibRn = UTEXOWallet<RgbLibEngine>;
 
 export interface RgbLibBoot {
-  wallet: RgbLibWallet;
+  wallet: RgbLibRn;
   mnemonic: string;
   storageDirPath: string;
 }
 
 export interface RgbLibScenarioContext {
   fx: E2EFixtures;
-  unlockParams: RgbLibUnlockParams;
+  unlockParams: RgbLibRnUnlockParams;
   /** Mutable: scenario L4 replaces the sender with its restored copy. */
   sender: RgbLibBoot;
   receiver: RgbLibBoot;
@@ -84,7 +85,7 @@ export const FEE_RATE = 2;
  * The fixtures describe the RLN unlock body: the indexer is a bare
  * `host:port`. rgb-lib needs the scheme to choose Electrum over Esplora.
  */
-export function rgbLibUnlockParams(fx: E2EFixtures): RgbLibUnlockParams {
+export function rgbLibUnlockParams(fx: E2EFixtures): RgbLibRnUnlockParams {
   for (const key of ['INDEXER_URL', 'PROXY_ENDPOINT'] as const) {
     if (!fx[key]) throw new Error(`e2e fixtures: ${key} is missing — re-run scripts/start-lsp-regtest.sh`);
   }
@@ -105,19 +106,20 @@ export async function freshDir(label: string): Promise<string> {
  * mnemonic.
  */
 export async function bootRgbLibWallet(
-  unlockParams: RgbLibUnlockParams,
+  unlockParams: RgbLibRnUnlockParams,
   opts: { label: string; mnemonic?: string; storageDirPath?: string }
 ): Promise<RgbLibBoot> {
-  const mnemonic = opts.mnemonic ?? (await createWallet('regtest')).mnemonic;
+  const mnemonic = opts.mnemonic ?? (await generateKeys('regtest')).mnemonic;
   const storageDirPath = opts.storageDirPath ?? (await freshDir(opts.label));
   const wallet = new UTEXOWallet({
-    protocol: 'RGB_L1',
-    params: { network: 'regtest', storageDirPath, witnessVersion: 'taproot' },
-    keys: new CallbackRgbLibKeyProvider(async () => mnemonic),
+    engine: new RgbLibEngine(
+      { network: 'regtest', storageDirPath, witnessVersion: 'taproot' },
+      new CallbackRgbLibRnKeyProvider(async () => mnemonic),
+    ),
   });
   try {
     await wallet.init();
-    await wallet.goOnline(unlockParams);
+    await wallet.unlock(unlockParams);
   } catch (error) {
     await wallet.dispose().catch(() => undefined);
     throw error;
@@ -126,7 +128,7 @@ export async function bootRgbLibWallet(
 }
 
 /** Fund with `btc`, confirm, and wait until rgb-lib sees it as settled. */
-export async function fundWallet(wallet: RgbLibWallet, btc: number): Promise<string> {
+export async function fundWallet(wallet: RgbLibRn, btc: number): Promise<string> {
   const address = await wallet.getAddress();
   const txid = await sendToAddress(address, btc);
   await mine(1);
@@ -138,7 +140,7 @@ export async function fundWallet(wallet: RgbLibWallet, btc: number): Promise<str
 }
 
 /** Create colorable UTXOs and wait for them to confirm. */
-export async function createColorableUtxos(wallet: RgbLibWallet, num: number): Promise<number> {
+export async function createColorableUtxos(wallet: RgbLibRn, num: number): Promise<number> {
   const created = await wallet.createUtxos({ num, feeRate: FEE_RATE });
   await mine(1);
   await waitFor('colorable UTXOs', async () => {
@@ -155,7 +157,7 @@ export async function createColorableUtxos(wallet: RgbLibWallet, num: number): P
  */
 export async function settle(
   label: string,
-  wallets: RgbLibWallet[],
+  wallets: RgbLibRn[],
   done: () => Promise<boolean>
 ): Promise<void> {
   await waitFor(
@@ -169,7 +171,7 @@ export async function settle(
 }
 
 /** Settled balance; 0 while the wallet has not seen the asset yet (rgb-lib: AssetNotFound). */
-export async function settledBalance(wallet: RgbLibWallet, assetId: string): Promise<number> {
+export async function settledBalance(wallet: RgbLibRn, assetId: string): Promise<number> {
   try {
     const balance = await wallet.getAssetBalance(assetId);
     return balance.settled ?? 0;

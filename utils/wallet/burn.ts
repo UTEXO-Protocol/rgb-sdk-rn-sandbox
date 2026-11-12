@@ -1,4 +1,4 @@
-import { burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient, type BurnDestinationRoute } from '@utexo/rgb-sdk-rn/webrgb';
+import { burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient, type BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletAsset } from './types';
 
