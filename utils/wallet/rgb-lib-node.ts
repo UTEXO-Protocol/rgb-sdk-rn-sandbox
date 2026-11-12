@@ -1,10 +1,10 @@
 import {
-  CallbackRgbLibKeyProvider,
+  CallbackRgbLibRnKeyProvider,
   generateKeys,
   RgbLibRn,
   DEFAULT_EVM_MINT_LOCK_BLOCKS,
-  type RgbLibMintLockBlocks,
-  type RgbLibUnlockParams,
+  type RgbLibRnMintLockBlocks,
+  type RgbLibRnUnlockParams,
 } from '@utexo/rgb-sdk-rn';
 import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -82,25 +82,25 @@ export function buildRgbLibConfig(network: DemoWalletNetwork) {
   }
   // Optional: a chain without bounds uses the SDK default (DEFAULT_EVM_MINT_LOCK_BLOCKS).
   const lockJson = env.lockJson?.trim();
-  let evmMintLockBlocks: Record<string, RgbLibMintLockBlocks> | undefined;
+  let evmMintLockBlocks: Record<string, RgbLibRnMintLockBlocks> | undefined;
   if (lockJson) {
     const blocks = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
     try {
       const parsed: unknown = JSON.parse(lockJson);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
         !Object.entries(parsed).every(([chain, value]) => {
-          const entry = value as Partial<Record<keyof RgbLibMintLockBlocks, unknown>> | null;
+          const entry = value as Partial<Record<keyof RgbLibRnMintLockBlocks, unknown>> | null;
           return /^[1-9][0-9]*$/.test(chain) && !!entry && typeof entry === 'object' &&
             blocks(entry.min) && blocks(entry.max) && (entry.min as number) <= (entry.max as number);
         })) throw new Error();
-      evmMintLockBlocks = parsed as Record<string, RgbLibMintLockBlocks>;
+      evmMintLockBlocks = parsed as Record<string, RgbLibRnMintLockBlocks>;
     } catch {
       throw new Error(`${prefix}_EVM_MINT_LOCK_BLOCKS must be a JSON object mapping EVM chain IDs to { min, max } block counts with min <= max.`);
     }
     const orphan = Object.keys(evmMintLockBlocks).find((chain) => !evmRpcUrls?.[chain]);
     if (orphan) throw new Error(`${prefix}_EVM_MINT_LOCK_BLOCKS sets chain ${orphan}, which has no entry in ${prefix}_EVM_RPC_URLS.`);
   }
-  return { network, unlockParams: { indexerUrl, proxyEndpoint, evmRpcUrls, evmMintLockBlocks } satisfies RgbLibUnlockParams };
+  return { network, unlockParams: { indexerUrl, proxyEndpoint, evmRpcUrls, evmMintLockBlocks } satisfies RgbLibRnUnlockParams };
 }
 
 function storageDirectory(network: DemoWalletNetwork) {
@@ -180,7 +180,7 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
         // the first online operation, once per session.
         ...config.unlockParams,
       },
-      new CallbackRgbLibKeyProvider(async () => {
+      new CallbackRgbLibRnKeyProvider(async () => {
         const mnemonic = await SecureStore.getItemAsync(key);
         if (!mnemonic) throw new Error('The saved RGB Lib wallet keys are unavailable.');
         return mnemonic;

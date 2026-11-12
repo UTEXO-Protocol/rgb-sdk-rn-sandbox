@@ -68,7 +68,7 @@ function fixture(init, modules = {}, env = {}) {
       const sdk = modules['@utexo/rgb-sdk-rn-rln'] ?? {};
       if (name === '@utexo/rgb-sdk-rn') return {
         generateKeys: sdk.createWallet,
-        CallbackRgbLibKeyProvider: sdk.CallbackRgbLibKeyProvider,
+        CallbackRgbLibRnKeyProvider: sdk.CallbackRgbLibRnKeyProvider,
         DEFAULT_EVM_MINT_LOCK_BLOCKS: Object.freeze({ min: 1200, max: 28800 }),
         RgbLibRn: class { constructor(params, keys) { this.params = params; this.keys = keys; } },
       };
@@ -235,7 +235,7 @@ function nativeWalletFixture(initError, options = {}) {
         if (options.newRgbKeys || options.regenerateRgbKeys) return { mnemonic: ++generatedKeys === 1 ? 'new-rgb-mnemonic' : `new-rgb-mnemonic-${generatedKeys}` };
         throw new Error('Must reuse saved keys');
       },
-      CallbackRgbLibKeyProvider: class { constructor(read) { this.getMnemonic = read; } },
+      CallbackRgbLibRnKeyProvider: class { constructor(read) { this.getMnemonic = read; } },
       PasswordRLNSigner: class {
         constructor(password, mnemonic) {
           assert.equal(password, 'saved-test-password');
