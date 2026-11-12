@@ -144,7 +144,7 @@ confirmation dialog.
 The shared UI is `components/wallet-screen.tsx`; each route passes its own
 service. `utils/wallet/profiles.ts` selects the opener and persistence namespaces.
 `utils/wallet/rgb-lib-node.ts` persists the mnemonic before native initialization
-and reads it through `CallbackRgbLibKeyProvider`. RGB Lib account identifiers
+and reads it through `CallbackRgbLibRnKeyProvider`. RGB Lib account identifiers
 use the `RGB-L1-` prefix (CAIP account characters do not allow underscores).
 Failed native cleanup retains the handle and must succeed before another open.
 

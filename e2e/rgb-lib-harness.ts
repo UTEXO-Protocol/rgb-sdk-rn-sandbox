@@ -7,10 +7,10 @@
  * (`--only L1,L2,L3,L4`) without booting a Lightning node.
  */
 import {
-  CallbackRgbLibKeyProvider,
+  CallbackRgbLibRnKeyProvider,
   RgbLibRn as RgbLibEngine,
   generateKeys,
-  type RgbLibUnlockParams,
+  type RgbLibRnUnlockParams,
 } from '@utexo/rgb-sdk-rn';
 import { UTEXOWallet } from '@utexo/rgb-sdk';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -28,7 +28,7 @@ export interface RgbLibBoot {
 
 export interface RgbLibScenarioContext {
   fx: E2EFixtures;
-  unlockParams: RgbLibUnlockParams;
+  unlockParams: RgbLibRnUnlockParams;
   /** Mutable: scenario L4 replaces the sender with its restored copy. */
   sender: RgbLibBoot;
   receiver: RgbLibBoot;
@@ -85,7 +85,7 @@ export const FEE_RATE = 2;
  * The fixtures describe the RLN unlock body: the indexer is a bare
  * `host:port`. rgb-lib needs the scheme to choose Electrum over Esplora.
  */
-export function rgbLibUnlockParams(fx: E2EFixtures): RgbLibUnlockParams {
+export function rgbLibUnlockParams(fx: E2EFixtures): RgbLibRnUnlockParams {
   for (const key of ['INDEXER_URL', 'PROXY_ENDPOINT'] as const) {
     if (!fx[key]) throw new Error(`e2e fixtures: ${key} is missing — re-run scripts/start-lsp-regtest.sh`);
   }
@@ -106,7 +106,7 @@ export async function freshDir(label: string): Promise<string> {
  * mnemonic.
  */
 export async function bootRgbLibWallet(
-  unlockParams: RgbLibUnlockParams,
+  unlockParams: RgbLibRnUnlockParams,
   opts: { label: string; mnemonic?: string; storageDirPath?: string }
 ): Promise<RgbLibBoot> {
   const mnemonic = opts.mnemonic ?? (await generateKeys('regtest')).mnemonic;
@@ -114,7 +114,7 @@ export async function bootRgbLibWallet(
   const wallet = new UTEXOWallet({
     engine: new RgbLibEngine(
       { network: 'regtest', storageDirPath, witnessVersion: 'taproot' },
-      new CallbackRgbLibKeyProvider(async () => mnemonic),
+      new CallbackRgbLibRnKeyProvider(async () => mnemonic),
     ),
   });
   try {
