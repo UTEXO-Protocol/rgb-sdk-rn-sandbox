@@ -2582,17 +2582,17 @@
     "@utexo/rgb-sdk-core" "1.0.0-beta.9"
     "@utexo/webrgb-walletconnect" "0.1.3"
 
-"@utexo/rgb-sdk-rn@file:../.local-packages/utexo-rgb-sdk-rn-1.0.0-beta.40.tgz":
-  version "1.0.0-beta.40"
-  resolved "file:../.local-packages/utexo-rgb-sdk-rn-1.0.0-beta.40.tgz"
-  integrity sha512-ig/nDWlE/Sscn//IVa29EsNS6ohUe0OXGEvyueceEJBL/KPQtXJ4Z+OpPzDjJukzyElfOR0JCvvAzivHebqWPw==
+"@utexo/rgb-sdk-rn@1.0.0-beta.41":
+  version "1.0.0-beta.41"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.41.tgz"
+  integrity sha512-lPCP2dk1PBeI6VpoeqRm651St0zB8aVzhwCUsRlcBNAX8vJOsegfZOs+QRMJKeSiaV6rgjA2eyhRVxayHAFkZg==
   dependencies:
     "@scure/bip32" "^2.0.1"
 
-"@utexo/rgb-sdk@file:../.local-packages/utexo-rgb-sdk-2.0.0-alpha.0.tgz":
-  version "2.0.0-alpha.0"
-  resolved "file:../.local-packages/utexo-rgb-sdk-2.0.0-alpha.0.tgz"
-  integrity sha512-tM6WzXPOwlCX9Kxc2q17aH5NDwvXdbsB+wm8stNYJYNRjXdfKJdwtBIx1oVr+4TP4X3t8oVEzxuaBIQbIa6IuQ==
+"@utexo/rgb-sdk@1.0.0-beta.10":
+  version "1.0.0-beta.10"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk/-/rgb-sdk-1.0.0-beta.10.tgz"
+  integrity sha512-yc+aVwlwUCInjY8dXv/GeDDr7TK5Wjx42PVaAfhGUfLXS864HKVZU0fz8qqLwR2T3nOPODoE+F8Sq5WIqbldiw==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@scure/base" "^2.0.0"
