@@ -7,7 +7,7 @@
  * from `@utexo/rgb-sdk-core/conformance`, the same helpers the web suite uses,
  * so the two tracks cannot drift in what they consider a valid response.
  */
-import { UTEXOWallet, PasswordRLNSigner, createWallet } from '@utexo/rgb-sdk-rn';
+import { UTEXOWallet, PasswordRLNSigner, createWallet } from '@utexo/rgb-sdk-rn-rln';
 import * as FileSystem from 'expo-file-system/legacy';
 import { documentDirectory } from 'expo-file-system/legacy';
 import { Platform } from 'react-native';

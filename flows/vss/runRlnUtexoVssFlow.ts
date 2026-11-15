@@ -2,7 +2,7 @@ import {
   createWallet,
   PasswordRLNSigner,
   UTEXOWallet,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 import * as FileSystem from 'expo-file-system/legacy';
 import { documentDirectory } from 'expo-file-system/legacy';
 

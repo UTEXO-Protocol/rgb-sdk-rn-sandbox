@@ -1,5 +1,12 @@
-import { BurnOperations, normalizeBurnRecord } from '@utexo/rgb-sdk-rn';
-import { burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient } from '@utexo/rgb-sdk-rn/webrgb';
+import {
+  BurnOperations,
+  burnDestinationHash,
+  createBurnDestination,
+  encodeEvmBurnRecipient,
+  encodeTronBurnRecipient,
+  normalizeBurnRecord,
+  WebRgbError,
+} from '@utexo/rgb-sdk/webrgb';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -53,9 +60,36 @@ function fixture(init, modules = {}, env = {}) {
     process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: 'a'.repeat(32), ...env } },
     setTimeout, clearTimeout, Error,
     require: (name) => {
-      if (name === '@utexo/rgb-sdk-rn') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
+      if (name === '@utexo/rgb-sdk-rn-rln') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk-rn/webrgb') return { WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      // RGB_L1 runs on @utexo/rgb-sdk-rn + @utexo/rgb-sdk. Tests describe one mock
+      // wallet under '@utexo/rgb-sdk-rn-rln'; build the L1 engine and facade from it.
+      const sdk = modules['@utexo/rgb-sdk-rn-rln'] ?? {};
+      if (name === '@utexo/rgb-sdk-rn') return {
+        generateKeys: sdk.createWallet,
+        CallbackRgbLibRnKeyProvider: sdk.CallbackRgbLibRnKeyProvider,
+        DEFAULT_EVM_MINT_LOCK_BLOCKS: Object.freeze({ min: 1200, max: 28800 }),
+        RgbLibRn: class { constructor(params, keys) { this.params = params; this.keys = keys; } },
+      };
+      if (name === '@utexo/rgb-sdk') return {
+        UTEXOWallet: function UTEXOWallet({ engine }) {
+          const wallet = new sdk.UTEXOWallet({ protocol: 'RGB_L1', params: engine.params, keys: engine.keys });
+          // The new facade's refresh() maps to the old mock's refreshTransfers().
+          wallet.refresh = (options) => wallet.refreshTransfers(options?.skipSync);
+          // The engine's constructor connection settings are what unlock()/reinit() use without params.
+          const connection = Object.fromEntries(
+            ['indexer', 'indexerUrl', 'proxyEndpoint', 'evmRpcUrls', 'evmMintLockBlocks', 'proxyAuthKeys']
+              .filter((key) => engine.params[key] !== undefined)
+              .map((key) => [key, engine.params[key]]),
+          );
+          for (const method of ['unlock', 'reinit']) {
+            const original = wallet[method].bind(wallet);
+            wallet[method] = (params) => original(params ?? (Object.keys(connection).length ? connection : undefined));
+          }
+          return wallet;
+        },
+      };
       if (name === '@walletconnect/core') return { Core: class { constructor(options) { stats.cores++; stats.coreOptions.push(options); } } };
       if (name === '@reown/walletkit') return { WalletKit: { init: (options) => {
         stats.clients++;
@@ -196,12 +230,12 @@ function nativeWalletFixture(initError, options = {}) {
         storage.set(key, value);
       },
     },
-    '@utexo/rgb-sdk-rn': {
+    '@utexo/rgb-sdk-rn-rln': {
       createWallet: async () => {
         if (options.newRgbKeys || options.regenerateRgbKeys) return { mnemonic: ++generatedKeys === 1 ? 'new-rgb-mnemonic' : `new-rgb-mnemonic-${generatedKeys}` };
         throw new Error('Must reuse saved keys');
       },
-      CallbackRgbLibKeyProvider: class { constructor(read) { this.getMnemonic = read; } },
+      CallbackRgbLibRnKeyProvider: class { constructor(read) { this.getMnemonic = read; } },
       PasswordRLNSigner: class {
         constructor(password, mnemonic) {
           assert.equal(password, 'saved-test-password');
@@ -275,6 +309,10 @@ function nativeWalletFixture(initError, options = {}) {
           native.invoices.push(params);
           return { invoice: 'rgb:test-invoice', expirationTimestamp: 1234567890 };
         }
+        async witnessReceive(params) {
+          native.invoices.push({ ...params, witness: true });
+          return { invoice: 'rgb:test-witness-invoice', expirationTimestamp: 1234567890 };
+        }
         async dispose() { calls.push('dispose'); await options.dispose?.(); }
       },
     },
@@ -315,6 +353,14 @@ test('Open wallet also unlocks after first-time node initialization succeeds', a
   await wallet.start();
   assert.deepEqual(calls, ['init', 'unlock']);
   assert.equal(wallet.snapshot().ready, true);
+});
+
+test('RGB Lib opens without an explicit connect; rgb-lib goOnline runs lazily', async () => {
+  const { load, calls } = nativeWalletFixture();
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  assert.equal(wallet.snapshot().ready, true);
+  assert.equal(calls.filter((call) => call === 'unlock').length, 0);
 });
 
 test('Open wallet reports unrelated init failures without attempting unlock', async () => {
@@ -438,6 +484,29 @@ test('local invoices validate amount, asset and expiry before allocating a recei
   assert.equal(native.invoices[1].amount, undefined);
   assert.equal(native.invoices[1].assetId, undefined);
   assert.equal(native.invoices[1].durationSeconds, 21600);
+});
+
+test('RGB Lib creates witness invoices; the RLN wallet refuses them', async () => {
+  const { load, native } = nativeWalletFixture();
+  const wallet = load('RGB_L1');
+  await wallet.start();
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180', kind: 'witness' });
+  assert.deepEqual(JSON.parse(JSON.stringify(native.invoices[0])), {
+    amount: 5, durationSeconds: 10800, minConfirmations: 3, witness: true,
+  });
+  assert.equal(wallet.snapshot().invoice.invoice, 'rgb:test-witness-invoice');
+  assert.equal(wallet.snapshot().invoice.kind, 'witness');
+  // Blind stays the default.
+  await wallet.generateInvoice({ amount: '5', durationMinutes: '180' });
+  assert.equal(native.invoices[1].witness, undefined);
+  assert.equal(wallet.snapshot().invoice.kind, 'blind');
+
+  const rln = nativeWalletFixture();
+  const rlnWallet = rln.load();
+  await rlnWallet.start();
+  await rlnWallet.generateInvoice({ amount: '5', durationMinutes: '180', kind: 'witness' });
+  assert.match(rlnWallet.snapshot().error, /RGB Lib tab/);
+  assert.equal(rln.native.invoices.length, 0);
 });
 
 test('BFA receive preserves the asset constraint and never silently removes a requested amount', async () => {
@@ -1235,11 +1304,32 @@ test('RGB Lib requires explicit per-network endpoints and chain IDs instead of i
   };
   const config = fixture(undefined, {}, configured).loadRgbConfig();
   assert.equal(config('utexo').unlockParams.evmRpcUrls, undefined);
+  assert.equal(config('utexo').unlockParams.evmMintLockBlocks, undefined);
   assert.throws(() => config('regtest'), /EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL/);
-  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"1":"https://evm.example"}';
-  assert.equal(fixture(undefined, {}, configured).loadRgbConfig()('utexo').unlockParams.evmRpcUrls['1'], 'https://evm.example');
+  const params = () => fixture(undefined, {}, configured).loadRgbConfig()('utexo').unlockParams;
+  // The config comes from another vm realm; compare its JSON shape.
+  const json = (value) => JSON.parse(JSON.stringify(value));
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"1":"https://evm.example","42161":"https://arb.example"}';
+  // Bounds are optional; the SDK applies its defaults to chains without them.
+  assert.equal(params().evmRpcUrls['1'], 'https://evm.example');
+  assert.equal(params().evmMintLockBlocks, undefined);
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS = '{"42161":{"min":100,"max":200}}';
+  assert.deepEqual(json(params().evmMintLockBlocks), { 42161: { min: 100, max: 200 } });
+  for (const bad of [
+    '{"42161":{"min":300,"max":200}}',
+    '{"42161":{"min":100}}',
+    '{"42161":{"min":-1,"max":200}}',
+    '{"42161":"1200"}',
+    '{"guess":{"min":1,"max":2}}',
+  ]) {
+    configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS = bad;
+    assert.throws(params, /EVM_MINT_LOCK_BLOCKS must be a JSON object/);
+  }
+  configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS = '{"5":{"min":1,"max":2}}';
+  assert.throws(params, /chain 5, which has no entry in EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS/);
+  delete configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_MINT_LOCK_BLOCKS;
   configured.EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS = '{"guess":"https://evm.example"}';
-  assert.throws(() => fixture(undefined, {}, configured).loadRgbConfig()('utexo'), /mapping EVM chain IDs/);
+  assert.throws(params, /mapping EVM chain IDs/);
 });
 
 test('failure after opening RGB Lib retains ownership until native cleanup succeeds', async () => {

@@ -1,13 +1,17 @@
-import { BurnOperations, UTEXOWallet } from '@utexo/rgb-sdk-rn';
+// RLN's transfer mapper still comes from @utexo/rgb-sdk-rn-rln; WebRGB and the burn
+// journal come from @utexo/rgb-sdk/webrgb, as in the app.
+import { UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
+import { BurnOperations } from '@utexo/rgb-sdk/webrgb';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
+import { keccak_256 } from '@noble/hashes/sha3.js';
 import { test } from 'node:test';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
-import { WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk-rn/webrgb';
+import { WebRgbError, WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk/webrgb';
 import * as invoicePolicy from '../utils/wallet/invoice.ts';
 
 const source = ts.transpileModule(
@@ -33,9 +37,13 @@ vm.runInNewContext(source, {
   Uint8Array,
   require: (name) => {
     if (name === './invoice') return invoicePolicy;
-    assert.equal(name, '@utexo/rgb-sdk-rn/webrgb');
-    return { WebRgbProvider };
+    assert.equal(name, '@utexo/rgb-sdk/webrgb');
+    return { WebRgbProvider, WebRgbError };
   },
+});
+// A journal that no test burns through.
+const emptyJournal = () => ({
+  operations: new BurnOperations({}, { readAll: async () => [], write: async () => {} }),
 });
 
 test('burn history reports the burned amount, never its change, through the real SDK provider', async () => {
@@ -63,6 +71,7 @@ test('burn history reports the burned amount, never its change, through the real
     context: { origin: 'https://bridge.example', signal: abort.signal, assertAuthorized() {} },
     confirm: async () => { throw new Error('Reading history must not request a burn'); },
     run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
   });
   const transfers = await provider.listTransfers(assetId);
   assert.equal(transfers[0].amount, 100000);
@@ -101,6 +110,7 @@ test('the installed SDK supplies exact burn amounts through the demo without a j
     context: { origin: 'https://bridge.example', network: 'utexo', signal: new AbortController().signal, assertAuthorized() {} },
     confirm: async () => { throw new Error('Reading history must not request a burn'); },
     run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
   });
   const transfers = await provider.listTransfers(assetId);
   assert.equal(transfers[0].amount, 100000);
@@ -126,6 +136,7 @@ test('receive invoices keep a three-hour mint window through SDK approval and na
     context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
     confirm: async (request) => { approvals.push(request.params); return true; },
     run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
   });
   for (const durationSeconds of [undefined, 60, 3600, 10800, 21600]) {
     const args = Object.freeze({ amount: 5, durationSeconds });
@@ -282,7 +293,8 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
       rlnListTransfers: async () => [{ txid, idx: 3, kind: 'Burn', status: 'Settled',
         requestedAssignment: 'Fungible(5)', assignments: ['Fungible(95)'] }],
     }, asset),
-    listTransactionsByTxid: async () => [{ txid, confirmationTime: { height: 100 } }],
+    // @utexo/rgb-sdk/webrgb reads the shared transaction list and finds the txid.
+    listTransactions: async () => [{ txid: 'cd'.repeat(32) }, { txid, confirmationTime: { height: 100 } }],
     getNetworkInfo: async () => ({ blockHeight: 102 }),
     refreshWallet: async () => {},
   };
@@ -304,6 +316,7 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
         burn: {
           operations, destinationRoutes,
         },
+        burnEnabled: true,
       }),
   });
   t.after(() => host.dispose());
@@ -318,8 +331,13 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
   await provider.enable();
   const info = await provider.getInfo();
   assert.equal(info.protocol, protocol);
-  assert.equal(info.burnDestinationVersion, protocol === 'RGB_L1' ? 1 : undefined);
-  assert.deepEqual(info.burnDestinationRoutes, destinationRoutes);
+  assert.equal(info.ready, true);
+  assert.equal(info.network, network);
+  assert.deepEqual(info.burnRecipientNamespaces, ['eip155', 'tron']);
+  assert.ok(info.methods.includes('burnAsset') && info.methods.includes('getConsignment'));
+  // Routes stay wallet-side: the bridge UI sends burnDestination and the wallet checks it.
+  assert.ok(!('burnDestinationVersion' in info));
+  assert.ok(!('burnDestinationRoutes' in info));
   const invoiceRequestedAt = Math.floor(Date.now() / 1000);
   const invoice = await provider.blindReceive({ amount: 5, durationSeconds: 3600 });
   assert.equal(invoice.invoice, 'rgb:invoice');
@@ -377,6 +395,8 @@ test('revoking a request during confirmation prevents the SDK from starting burn
       burn: async () => {
         burns++;
       },
+      // Burn options need a wallet that can also export the proof.
+      getConsignment: async () => '',
     },
     {
       context,
@@ -385,26 +405,29 @@ test('revoking a request during confirmation prevents the SDK from starting burn
         return true;
       },
       run: (_method, _args, action) => action(),
-      burn: {
-        operations: new BurnOperations({}, { readAll: async () => [], write: async () => {} }),
-      },
+      burn: emptyJournal(),
+      burnEnabled: true,
     },
   );
   await assert.rejects(provider.burnAsset(args), { code: 'NOT_ENABLED' });
   assert.equal(burns, 0);
 });
 
-test('RGB Lib without a burn extension does not advertise signing or bridge payout methods', async () => {
+test('RGB Lib that cannot burn does not advertise signing or bridge payout methods', async () => {
   const native = {
     protocol: 'RGB_L1',
     isDisposed: () => false,
     getNetwork: () => 'regtest',
-    getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    // Watch-only: burn is part of every provider, but native code cannot sign it.
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    burn: async () => { throw new Error('Must not reach unsupported burn'); },
+    getConsignment: async () => { throw new Error('Must not reach unsupported proof export'); },
     signMessage: async () => { throw new Error('Must not reach unsupported signing'); },
   };
   const provider = new WebRgbProvider(native, {
     origin: 'https://bridge.example', sessionApproved: true,
     confirm: async () => { throw new Error('No approval expected for info'); },
+    burn: emptyJournal(),
   });
   const info = await provider.getInfo();
   assert.equal(info.protocol, 'RGB_L1');
@@ -412,6 +435,7 @@ test('RGB Lib without a burn extension does not advertise signing or bridge payo
   assert.ok(!info.methods.includes('burnAsset'));
   assert.ok(!info.methods.includes('signMessage'));
   await assert.rejects(provider.signMessage('test'), { code: 'METHOD_NOT_SUPPORTED' });
+  await assert.rejects(provider.burnAsset({}), { code: 'METHOD_NOT_SUPPORTED' });
   // Run the real adapter's account validation (the two profiles use distinct prefixes).
   const events = new EventEmitter();
   const transport = createWalletConnectWallet({
@@ -422,4 +446,168 @@ test('RGB Lib without a burn extension does not advertise signing or bridge payo
     getProvider: () => provider,
   });
   transport.dispose();
+});
+
+test('demo network policy hides burn even when native code can burn', async () => {
+  let burns = 0;
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'testnet',
+    getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    burn: async () => { burns++; },
+    getConsignment: async () => '',
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://bridge.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => true,
+    run: (_method, _args, action) => action(),
+    burn: emptyJournal(),
+    burnEnabled: false,
+  });
+  const { methods } = await provider.getInfo();
+  assert.ok(!methods.includes('burnAsset'));
+  assert.ok(!methods.includes('getConsignment'));
+  await assert.rejects(provider.burnAsset({}), { code: 'METHOD_NOT_SUPPORTED' });
+  await assert.rejects(provider.getConsignment({}), { code: 'METHOD_NOT_SUPPORTED' });
+  assert.equal(burns, 0);
+});
+
+// ── V1 burn destination (bridge-fe sends it, the wallet checks it) ──────────
+
+// Independent of the SDK: keccak256(abi.encode(typeHash, uint64, uint32, keccak256(bytes))).
+function referenceV1Hash({ destinationChainId, dstEid, recipient }) {
+  const word = (n) => Buffer.from(BigInt(n).toString(16).padStart(64, '0'), 'hex');
+  const typeHash = keccak_256(Buffer.from('UtexoBurnDestinationV1(uint64 destinationChainId,uint32 dstEid,bytes recipient)'));
+  return '0x' + Buffer.from(keccak_256(Buffer.concat([
+    typeHash, word(destinationChainId), word(dstEid), keccak_256(Buffer.from(recipient.slice(2), 'hex')),
+  ]))).toString('hex');
+}
+
+// Same shape as the utexo routes in utils/wallet/profiles.ts.
+const UTEXO_ROUTES = [
+  { chainId: 'eip155:42161', dstEid: 0 },
+  { chainId: 'eip155:1', dstEid: 30101 },
+  { chainId: 'tron:728126428', dstEid: 30420 },
+];
+const EVM_PAYOUT = { chainId: 'eip155:1', address: '0x' + 'ab'.repeat(20) };
+const TRON_PAYOUT = { chainId: 'tron:728126428', address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' };
+
+function destinationWallet() {
+  const records = [], burned = [], confirmed = [];
+  const assetId = 'rgb:bfa';
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'utexo',
+    getBfaCapabilities: async () => ({ burn: true, consignment: true }),
+    listAssets: async () => ({ bfa: [{ assetId, name: 'Mock', precision: 0 }] }),
+    async burn(params) {
+      burned.push(params);
+      return { txid: (burned.length.toString(16).padStart(2, '0')).repeat(32), batchTransferIdx: burned.length };
+    },
+    getConsignment: async () => '',
+  };
+  const operations = new BurnOperations(native, {
+    readAll: async () => records.map((r) => JSON.parse(JSON.stringify(r))),
+    write: async (record) => {
+      const i = records.findIndex((r) => r.id === record.id);
+      if (i < 0) records.push(record); else records[i] = record;
+    },
+  });
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://bridge.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async (request) => { confirmed.push(request.params); return true; },
+    run: (_method, _args, action) => action(),
+    burn: { operations, destinationRoutes: UTEXO_ROUTES },
+    burnEnabled: true,
+  });
+  const burn = (extra) => provider.burnAsset({
+    network: 'utexo', assetId, amount: '7', burnRecipient: EVM_PAYOUT, ...extra,
+  });
+  return { provider, burn, records, burned, confirmed };
+}
+
+test('the SDK V1 hash matches the reference encoding for EVM and Tron payouts', () => {
+  const evm = createBurnDestination(EVM_PAYOUT, UTEXO_ROUTES);
+  assert.deepEqual(evm, { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_PAYOUT.address });
+  assert.equal(burnDestinationHash(evm), referenceV1Hash(evm));
+  const tron = createBurnDestination(TRON_PAYOUT, UTEXO_ROUTES);
+  assert.equal(tron.destinationChainId, 728126428);
+  assert.equal(tron.dstEid, 30420);
+  assert.match(tron.recipient, /^0x41[0-9a-f]{40}$/);
+  assert.equal(burnDestinationHash(tron), referenceV1Hash(tron));
+});
+
+test('getInfo does not advertise V1 routes, but the wallet still enforces them', async () => {
+  const { provider, burn, burned } = destinationWallet();
+  const info = await provider.getInfo();
+  assert.deepEqual(
+    Object.keys(info).sort(),
+    ['burnRecipientNamespaces', 'methods', 'network', 'protocol', 'ready'],
+  );
+  assert.equal(info.ready, true);
+  assert.equal(info.network, 'utexo');
+  assert.equal(info.protocol, 'RGB_L1');
+  assert.deepEqual(info.burnRecipientNamespaces, ['eip155', 'tron']);
+  assert.ok(info.methods.includes('burnAsset'));
+  // Enforcement is unchanged: an unconfigured payout chain is refused.
+  await assert.rejects(
+    burn({ burnRecipient: { chainId: 'eip155:56', address: EVM_PAYOUT.address } }),
+    { code: 'INVALID_PARAMS', message: /Unsupported V1 payout route/ },
+  );
+  assert.equal(burned.length, 0);
+});
+
+test('a supplied burnDestination reaches the SDK intact and is kept in result, journal and status', async () => {
+  const { provider, burn, records, burned, confirmed } = destinationWallet();
+  const burnDestination = { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_PAYOUT.address.toUpperCase().replace('0X', '0x') };
+  const expected = { ...burnDestination, recipient: EVM_PAYOUT.address };
+  // The site may send a hash or extra fields; the wallet ignores them and hashes its own.
+  const result = await burn({ burnDestination: { ...burnDestination, hash: '0x' + '00'.repeat(32) } });
+  assert.equal(burned.length, 1);
+  assert.equal(burned[0].burnRecipient, referenceV1Hash(expected).slice(2));
+  assert.deepEqual(result.burnDestination, expected);
+  assert.equal(confirmed.length, 1);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].state, 'complete');
+  assert.deepEqual(records[0].metadata.burnDestination, expected);
+  assert.deepEqual(records[0].metadata.payout, EVM_PAYOUT);
+  // The stored record survives a JSON round trip (AsyncStorage) and re-validates.
+  const [reread] = await new BurnOperations({}, { readAll: async () => JSON.parse(JSON.stringify(records)), write: async () => {} }).records();
+  assert.deepEqual(reread.metadata.burnDestination, expected);
+});
+
+test('mismatched burnDestination parameters are refused before native burn', async () => {
+  const good = { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_PAYOUT.address };
+  const cases = [
+    ['unsupported version', { burnDestination: { ...good, version: 2 } }, /Invalid V1 burn destination/],
+    ['another chain', { burnDestination: { ...good, destinationChainId: 137 } }, /does not match the payout/],
+    ['another recipient', { burnDestination: { ...good, recipient: '0x' + 'cd'.repeat(20) } }, /does not match the payout/],
+    ['route not in wallet config', { burnDestination: { ...good, dstEid: 30109 } }, /does not match wallet configuration/],
+    ['malformed recipient', { burnDestination: { ...good, recipient: 'abcd' } }, /Invalid V1 burn destination/],
+    ['wrong RGB network', { network: 'regtest', burnDestination: good }, /Invalid RGB network/],
+    ['unconfigured payout chain', {
+      burnRecipient: { chainId: 'eip155:56', address: EVM_PAYOUT.address },
+      burnDestination: { ...good, destinationChainId: 56 },
+    }, /Unsupported V1 payout route/],
+  ];
+  for (const [label, extra, message] of cases) {
+    const { burn, records, burned, confirmed } = destinationWallet();
+    await assert.rejects(burn(extra), { code: 'INVALID_PARAMS', message }, label);
+    assert.equal(burned.length, 0, label);
+    assert.equal(confirmed.length, 0, `${label}: no approval prompt`);
+    assert.equal(records.length, 0, `${label}: nothing journaled`);
+  }
+});
+
+test('without burnDestination the wallet still builds it from burnRecipient and its routes', async () => {
+  for (const payout of [EVM_PAYOUT, TRON_PAYOUT]) {
+    const { burn, records, burned } = destinationWallet();
+    const expected = createBurnDestination(payout, UTEXO_ROUTES);
+    const result = await burn({ burnRecipient: payout });
+    assert.equal(burned[0].burnRecipient, referenceV1Hash(expected).slice(2), payout.chainId);
+    assert.deepEqual(result.burnDestination, expected);
+    assert.deepEqual(records[0].metadata.burnDestination, expected);
+  }
 });

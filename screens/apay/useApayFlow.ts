@@ -39,7 +39,7 @@ import {
   NativeExternalRLNSigner,
   PasswordRLNSigner,
   UTEXOWallet,
-} from '@utexo/rgb-sdk-rn';
+} from '@utexo/rgb-sdk-rn-rln';
 
 import { faucet, lspDaemon } from '../lsp-regtest/daemons';
 import {

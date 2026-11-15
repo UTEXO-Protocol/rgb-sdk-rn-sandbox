@@ -3,14 +3,14 @@
  *
  * The sender, holding BTC and the L2/L3 assets, writes an encrypted backup.
  * The wallet is then closed and its directory deleted (the "lost device").
- * `restoreFromBackup` rebuilds it into a new, empty directory, and the
+ * `restoreBackupFromFile` rebuilds it into a new, empty directory, and the
  * restored wallet must show the same assets and balances and still be able to
  * send. A wrong password must be refused.
  *
  * Replaces `ctx.sender` with the restored wallet; teardown disposes it.
  */
 import * as FileSystem from 'expo-file-system/legacy';
-import { restoreFromBackup } from '@utexo/rgb-sdk-rn';
+import { restoreBackupFromFile } from '@utexo/rgb-sdk-rn';
 import { HEX_32 } from '@utexo/rgb-sdk-core/conformance';
 
 import { assert, assertEq } from '../harness';
@@ -21,13 +21,13 @@ import {
   settle,
   settledBalance,
   type RgbLibScenarioContext,
-  type RgbLibWallet,
+  type RgbLibRn,
 } from '../rgb-lib-harness';
 
 const PASSWORD = 'e2e-backup-password';
 const SEND_AFTER_RESTORE = 10;
 
-async function snapshot(wallet: RgbLibWallet) {
+async function snapshot(wallet: RgbLibRn) {
   const assets = await wallet.listAssets();
   const ids = [...assets.nia, ...assets.ifa, ...assets.cfa, ...assets.uda, ...assets.bfa]
     .map((a) => a.assetId)
@@ -51,8 +51,8 @@ export async function scenarioL4(ctx: RgbLibScenarioContext): Promise<void> {
 
   const backupDir = await freshDir('backup');
   const backupFilePath = `${backupDir}/wallet.rgb-backup`;
-  await step('createBackup', () =>
-    original.wallet.createBackup({ backupPath: backupFilePath, password: PASSWORD }),
+  await step('exportBackupToFile', () =>
+    original.wallet.exportBackupToFile({ filePath: backupFilePath, password: PASSWORD }),
   (r) => r);
   const info = await FileSystem.getInfoAsync(`file://${backupFilePath}`);
   assert(info.exists && (info.size ?? 0) > 0, 'the backup file must exist and be non-empty');
@@ -67,12 +67,12 @@ export async function scenarioL4(ctx: RgbLibScenarioContext): Promise<void> {
   await step('restore with a wrong password is refused', async () => {
     const dataDir = await freshDir('restore_bad');
     return expectRejects('restore with a wrong password', () =>
-      restoreFromBackup({ backupFilePath, password: 'not-the-password', dataDir })
+      restoreBackupFromFile({ filePath: backupFilePath, password: 'not-the-password', dataDir })
     );
   }, (message) => ({ message }));
 
   const dataDir = await freshDir('restored');
-  await step('restoreFromBackup', () => restoreFromBackup({ backupFilePath, password: PASSWORD, dataDir }), (r) => r);
+  await step('restoreBackupFromFile', () => restoreBackupFromFile({ filePath: backupFilePath, password: PASSWORD, dataDir }), (r) => r);
 
   const restored = await step('open restored wallet', () =>
     bootRgbLibWallet(ctx.unlockParams, { label: 'restored', mnemonic: original.mnemonic, storageDirPath: dataDir }),
