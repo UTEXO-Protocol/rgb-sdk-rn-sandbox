@@ -43,7 +43,14 @@ export function createDemoRgbProvider(
   return {
     enable: wrap('enable', () => provider.enable()),
     getInfo: wrap('getInfo', async () => {
-      const info = await provider.getInfo();
+      // The bridge UI no longer reads the V1 route list. The routes stay
+      // wallet-side (profiles.ts) and the SDK checks every burnDestination
+      // against them, so they are not advertised to websites.
+      const {
+        burnDestinationVersion: _version,
+        burnDestinationRoutes: _routes,
+        ...info
+      } = await provider.getInfo();
       return options.burnEnabled
         ? info
         : { ...info, methods: info.methods.filter((method) => !BURN_METHODS.has(method)) };
