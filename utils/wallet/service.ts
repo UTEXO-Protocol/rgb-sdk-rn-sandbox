@@ -72,9 +72,16 @@ export class DemoWalletService {
     set: (patch) => this.set(patch),
   });
   private supportedMethods(): readonly string[] {
-    return this.state.burnAvailable
-      ? [...WEBRGB_READ_METHODS, 'burnAsset', 'getConsignment']
-      : WEBRGB_READ_METHODS;
+    // Engines (and SDK releases) without invoice-scoped mint validation omit it.
+    const mint =
+      typeof (this.wallet as { getReceivedMint?: unknown } | undefined)?.getReceivedMint === 'function'
+        ? ['getReceivedMint']
+        : [];
+    return [
+      ...WEBRGB_READ_METHODS,
+      ...(this.state.burnAvailable ? ['burnAsset', 'getConsignment'] : []),
+      ...mint,
+    ];
   }
 
   snapshot = () => this.state;
@@ -665,13 +672,13 @@ export class DemoWalletService {
           if (generation !== this.generation || this.changingNetwork || !this.state.ready)
             throw new Error('Wallet network changed. Reconnect the website.');
           const wireMethod = `rgb_${method}`;
-          const noteworthy = ['blindReceive', 'burnAsset', 'getConsignment'].includes(method);
+          const noteworthy = ['blindReceive', 'witnessReceive', 'burnAsset', 'getConsignment'].includes(method);
           this.set({ activeRequest: wireMethod });
           try {
             context.assertAuthorized();
             if (noteworthy) console.info(`[Wallet] ${method}: awaiting approval/execution`);
             const result = await action();
-            if (method === 'blindReceive') {
+            if (method === 'blindReceive' || method === 'witnessReceive') {
               const invoice = result as { invoice: string; expirationTimestamp?: number };
               const receive = args[0] as { assetId?: string; amount?: number } | undefined;
               this.set({
@@ -683,7 +690,7 @@ export class DemoWalletService {
               this.set({ lastRequest: { method: wireMethod, status: 'completed' } });
               console.info(`[Wallet] ${method}: completed; returning result`);
             }
-            if (['blindReceive', 'burnAsset', 'getTransferStatus'].includes(method)) {
+            if (['blindReceive', 'witnessReceive', 'burnAsset', 'getTransferStatus', 'getReceivedMint'].includes(method)) {
               await this.readWalletData().catch((error) => {
                 this.set({
                   error: `Operation completed; balances could not refresh: ${messageOf(error)}`,

@@ -611,3 +611,75 @@ test('without burnDestination the wallet still builds it from burnRecipient and 
     assert.deepEqual(records[0].metadata.burnDestination, expected);
   }
 });
+
+// ── Served methods and invoice-scoped mint validation ───────────────────────
+
+test('witness invoices keep the same three-hour mint window as blind invoices', async () => {
+  const invoices = [];
+  const wallet = {
+    isDisposed: () => false,
+    witnessReceive: async (args) => {
+      invoices.push(args);
+      return { invoice: 'rgb:witness', recipientId: 'bcrt:utxow:r', expirationTimestamp: 1 };
+    },
+  };
+  const provider = createDemoRgbProvider(wallet, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => true,
+    run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
+  });
+  await provider.witnessReceive({ amount: 5, durationSeconds: 60 });
+  await provider.witnessReceive();
+  assert.deepEqual(invoices.map((a) => a.durationSeconds), [10800, 10800]);
+});
+
+test('getInfo lists only the methods the demo backend serves', async () => {
+  const native = {
+    protocol: 'RGB_LN',
+    isDisposed: () => false,
+    getNetwork: () => 'regtest',
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    // The SDK lists signMessage for RLN, but the demo backend does not serve it.
+    signMessage: async () => 'sig',
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => true,
+    run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: true,
+  });
+  const { methods } = await provider.getInfo();
+  assert.ok(methods.includes('witnessReceive'));
+  for (const method of methods) assert.equal(typeof provider[method], 'function', method);
+  assert.ok(!methods.includes('signMessage'));
+});
+
+test('getReceivedMint reaches the SDK through the operation queue, without approval', {
+  skip: typeof WebRgbProvider.prototype.getReceivedMint !== 'function'
+    && 'the installed @utexo/rgb-sdk has no getReceivedMint',
+}, async () => {
+  const invoice = 'rgb:rgb:bfa/~/bcrt:utxob:owned';
+  const runs = [];
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'regtest',
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    decodeRGBInvoice: async () => ({ network: 'regtest', recipientId: 'bcrt:utxob:owned', assetId: 'rgb:bfa', expirationTimestamp: null }),
+    listTransfers: async () => [{ idx: 1, kind: 'ReceiveBlind', status: 'WaitingCounterparty', recipientId: 'bcrt:utxob:owned', invoiceString: invoice, assignments: [] }],
+    getReceivedMint: async (_recipientId, options) => {
+      assert.deepEqual(options, { refreshIncoming: true });
+      return undefined;
+    },
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => { throw new Error('getReceivedMint must not prompt'); },
+    run: (method, _args, action) => { runs.push(method); return action(); },
+    burn: emptyJournal(), burnEnabled: false,
+  });
+  assert.ok((await provider.getInfo()).methods.includes('getReceivedMint'));
+  assert.equal(await provider.getReceivedMint({ invoice }), null);
+  assert.deepEqual(runs, ['getInfo', 'getReceivedMint']);
+});
