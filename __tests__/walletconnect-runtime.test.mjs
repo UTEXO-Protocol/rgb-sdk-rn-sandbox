@@ -1,9 +1,7 @@
 import {
   BurnOperations,
-  burnDestinationHash,
-  createBurnDestination,
-  encodeEvmBurnRecipient,
-  encodeTronBurnRecipient,
+  burnDestinationReason,
+  normalizeBurnDestination,
   normalizeBurnRecord,
   WebRgbError,
 } from '@utexo/rgb-sdk/webrgb';
@@ -62,7 +60,7 @@ function fixture(init, modules = {}, env = {}) {
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn-rln') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient };
+      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationReason, normalizeBurnDestination };
       // RGB_L1 runs on @utexo/rgb-sdk-rn + @utexo/rgb-sdk. Tests describe one mock
       // wallet under '@utexo/rgb-sdk-rn-rln'; build the L1 engine and facade from it.
       const sdk = modules['@utexo/rgb-sdk-rn-rln'] ?? {};
@@ -1004,7 +1002,7 @@ test('local burn converts decimal amounts exactly and persists without a website
     burnAvailable: true, precision: 6, available: () => 2_000_000,
   });
   client.sessions = {};
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const form = { ...localBurnForm, amount: '1.250001', payoutChainId: 'eip155:1' };
@@ -1026,21 +1024,21 @@ test('local burn converts decimal amounts exactly and persists without a website
   assert.equal(result.state, 'complete');
   assert.equal(native.burns.length, 1);
   assert.equal(native.burns[0].amount, '1250001');
-  assert.equal(native.burns[0].burnRecipient, '0'.repeat(24) + '12'.repeat(20));
+  const destination = { chainId: 'eip155:1', address: localBurnForm.payoutAddress, dstEid: 30101 };
+  assert.equal(native.burns[0].burnRecipient, burnDestinationReason(destination));
   assert.equal(result.metadata.origin, 'local:wallet');
   assert.equal(result.metadata.network, 'utexo');
-  assert.equal(result.metadata.payout.chainId, 'eip155:1');
-  assert.equal(result.metadata.payout.address, localBurnForm.payoutAddress);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.metadata.burnDestination)), destination);
   assert.equal(wallet.snapshot().burns[0].result.txid, 'ab'.repeat(32));
   assert.match(wallet.snapshot().message, /Burn broadcast/);
   assert.equal(wallet.snapshot().busy, false);
-  const persisted = JSON.parse(storage.get('utexo-burn-journal-v1:rgb:utexo:saved-node-pubkey'));
+  const persisted = JSON.parse(storage.get('utexo-burn-journal-v1:rgb:utexo:RGB-L1-saved-node-pubkey'));
   assert.equal(persisted[0].state, 'complete');
 });
 
-test('local burn to Tron keeps the Base58Check address and encodes the account bytes', async (t) => {
+test('local burn to Tron keeps the Base58Check address and commits its routed destination', async (t) => {
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const tronAddress = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
@@ -1051,13 +1049,14 @@ test('local burn to Tron keeps the Base58Check address and encodes the account b
   prompt.resolve(true);
   const result = await task;
   assert.equal(result.state, 'complete');
-  assert.equal(native.burns[0].burnRecipient, encodeTronBurnRecipient(tronAddress));
-  assert.deepEqual(result.metadata.payout, { chainId: 'tron:728126428', address: tronAddress });
+  const destination = { chainId: 'tron:728126428', address: tronAddress, dstEid: 30420 };
+  assert.equal(native.burns[0].burnRecipient, burnDestinationReason(destination));
+  assert.deepEqual(JSON.parse(JSON.stringify(result.metadata.burnDestination)), destination);
 });
 
 test('rejecting a local burn neither invokes native burn nor creates a journal entry', async () => {
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   const task = wallet.burnAsset(localBurnForm);
   (await waitForWalletPrompt(wallet)).resolve(false);
@@ -1069,7 +1068,7 @@ test('rejecting a local burn neither invokes native burn nor creates a journal e
 
 test('local burn rejects invalid amounts, non-BFA assets, recipients and payout networks before approval', async () => {
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   for (const invalid of [
     { amount: '0' }, { amount: '6' }, { amount: '0.1' }, { amount: '1e2' },
@@ -1077,6 +1076,7 @@ test('local burn rejects invalid amounts, non-BFA assets, recipients and payout 
     { assetId: 'rgb:nia' }, { assetId: 'rgb:absent' },
     { payoutAddress: '0x' + '0'.repeat(40) }, { payoutAddress: 'not-an-address' },
     { payoutChainId: 'eip155:0' }, { payoutChainId: 'tron:1' }, { payoutChainId: 'solana:1' },
+    { payoutChainId: 'eip155:56' }, // No route for this chain.
     { payoutChainId: 'tron:728126428' }, // EVM address on a Tron chain.
     { payoutChainId: 'tron:728126428', payoutAddress: 'tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t' },
   ]) {
@@ -1090,7 +1090,7 @@ test('local burn rejects invalid amounts, non-BFA assets, recipients and payout 
 test('local burn rechecks available balance after approval', async (t) => {
   let available = 5;
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true, available: () => available });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
@@ -1105,7 +1105,7 @@ test('local burn rechecks available balance after approval', async (t) => {
 
 test('local burn cannot execute after its wallet context changes during approval', async (t) => {
   const { load, native } = nativeWalletFixture(undefined, { burnAvailable: true });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
@@ -1120,7 +1120,7 @@ test('local burn cannot execute after its wallet context changes during approval
 test('an ambiguous local native burn blocks another burn, including after reopening the journal', async (t) => {
   const options = { burnAvailable: true, burn: () => { throw new Error('Native connection lost'); } };
   const { load, native, storage } = nativeWalletFixture(undefined, options);
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
@@ -1133,7 +1133,7 @@ test('an ambiguous local native burn blocks another burn, including after reopen
   assert.equal(native.burns.length, 1);
   const reopened = nativeWalletFixture(undefined, { burnAvailable: true });
   for (const [key, value] of storage) reopened.storage.set(key, value);
-  const restored = reopened.load();
+  const restored = reopened.load('RGB_L1');
   await restored.start();
   await restored.burnAsset(localBurnForm);
   assert.match(restored.snapshot().error, /unresolved outcome/);
@@ -1146,7 +1146,7 @@ test('refresh saves a known local burn result after storage failure without burn
   const { load, native } = nativeWalletFixture(undefined, {
     burnAvailable: true, saveError: () => broken, burn: () => { broken = true; },
   });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
@@ -1166,7 +1166,7 @@ test('local burn retains its result when the subsequent balance refresh fails', 
   const { load, native } = nativeWalletFixture(undefined, {
     burnAvailable: true, burn: () => { burned = true; }, readError: () => burned,
   });
-  const wallet = load();
+  const wallet = load('RGB_L1');
   await wallet.start();
   t.after(() => wallet.snapshot().prompt?.resolve(false));
   const task = wallet.burnAsset(localBurnForm);
@@ -1204,7 +1204,8 @@ test('RLN and RGB Lib coexist with separate keys, directories, preferences, jour
   assert.equal(rgb.snapshot().ready, true, rgb.snapshot().error);
   assert.equal(rln.snapshot().protocol, 'RGB_LN');
   assert.equal(rgb.snapshot().protocol, 'RGB_L1');
-  assert.equal(rln.snapshot().burnAvailable, true);
+  // RLN has no payout routes, so it cannot commit a burn destination.
+  assert.equal(rln.snapshot().burnAvailable, false);
   assert.equal(rgb.snapshot().burnAvailable, true);
   assert.equal(native.nodes[0].storageDirPath, '/mock-wallet/wallet-connect-v1/utexo');
   assert.equal(native.nodes[1].storageDirPath, '/mock-wallet/wallet-connect-v1/RGB_L1/utexo/default/taproot');
@@ -1542,7 +1543,7 @@ test('deletion revokes queued website requests and blocks concurrent Open, Delet
 });
 
 
-test('local RGB Lib burns commit V1 destinations and recover from their separate journal', async (t) => {
+test('local RGB Lib burns commit the routed destination and recover from their separate journal', async (t) => {
   const { load, native, storage } = nativeWalletFixture(undefined, { burnAvailable: true });
   const rgb = load('RGB_L1');
   await rgb.start();
@@ -1555,9 +1556,9 @@ test('local RGB Lib burns commit V1 destinations and recover from their separate
   prompt.resolve(true);
   const result = await task;
   assert.equal(result.state, 'complete', rgb.snapshot().error);
-  const destination = { version: 1, destinationChainId: 42161, dstEid: 0, recipient: form.payoutAddress };
+  const destination = { chainId: 'eip155:42161', address: form.payoutAddress, dstEid: 0 };
   assert.deepEqual(JSON.parse(JSON.stringify(result.metadata.burnDestination)), destination);
-  assert.equal(native.burns[0].burnRecipient, burnDestinationHash(destination).slice(2));
+  assert.equal(native.burns[0].burnRecipient, burnDestinationReason(destination));
   const key = 'utexo-burn-journal-v1:rgb:utexo:RGB-L1-saved-node-pubkey';
   assert.equal(JSON.parse(storage.get(key))[0].state, 'complete');
   assert.equal(storage.has('utexo-burn-journal-v1:rgb:utexo:saved-node-pubkey'), false);
@@ -1570,6 +1571,6 @@ test('local RGB Lib burns commit V1 destinations and recover from their separate
   assert.equal(restart.native.burns.length, 0, 'Reopening must not reburn');
   const unsupported = await reopened.burnAsset({ ...form, payoutChainId: 'eip155:56' });
   assert.equal(unsupported, undefined);
-  assert.match(reopened.snapshot().error, /Unsupported V1 payout route/);
+  assert.match(reopened.snapshot().error, /no payout route/);
   assert.equal(reopened.snapshot().prompt, null);
 });

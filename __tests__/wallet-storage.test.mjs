@@ -9,7 +9,7 @@ const source = ts.transpileModule(readFileSync(new URL('../utils/wallet/storage.
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
 
-test('wallet journal keeps its account key and migrates v1 records without losing pending burns', async () => {
+test('wallet journal keeps its account key and never rewrites an older record', async () => {
   const legacy = {
     origin: 'https://mint.example', state: 'pending',
     request: { requestId: 'saved-id', network: 'regtest', assetId: 'rgb:test', amount: '5',
@@ -39,10 +39,16 @@ test('wallet journal keeps its account key and migrates v1 records without losin
   await store.write({ ...record, id: 'second-id', state: 'cancelled' });
   const records = JSON.parse(saved);
   assert.equal(records.length, 2);
-  assert.equal(records[0].id, 'saved-id');
-  assert.equal(records[0].state, 'pending');
+  // The v1 record is saved exactly as it was, in its own format.
+  assert.deepEqual(records[0], legacy);
   assert.equal(published.length, 2);
+  assert.equal(published[0].id, 'saved-id');
+  assert.equal(published[0].state, 'pending');
+  // Updating the v1 record by its ID replaces it and keeps the other one.
+  await store.write({ ...record, state: 'cancelled' });
+  const updated = JSON.parse(saved);
+  assert.deepEqual(updated.map((item) => item.id), ['second-id', 'saved-id']);
   saved = '{broken';
   await assert.rejects(store.write(record));
-  assert.equal(writes, 1, 'Corrupt state must never be overwritten');
+  assert.equal(writes, 2, 'Corrupt state must never be overwritten');
 });

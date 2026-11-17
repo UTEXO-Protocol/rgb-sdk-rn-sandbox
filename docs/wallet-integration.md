@@ -185,14 +185,22 @@ configured Bitcoin network. Missing configuration appears on the tab with the
 specific environment variable names. Restart Metro after setting them. The website must support `RGB_L1` on the same network; the deep
 link is `myapp://rgb-lib?uri=…`. WebRGB advertises the SDK's on-chain methods.
 RGB Lib supports local burns and WebRGB `burnAsset` / `getConsignment` when
-native burn and proof export are available. Payout routes in `utils/wallet/profiles.ts`
-match the bridge's V1 destination contract: Arbitrum, Ethereum, Polygon, Plasma and
-Tron on utexo; local EVM 31337 on regtest. The SDK commits the destination hash
-in the proof and saves the destination in the burn journal for recovery. An existing
+native burn and proof export are available. A website sends one
+`burnDestination: { chainId, address, dstEid }` with a native address. The SDK
+accepts only an exact chain and endpoint pair from the payout routes in
+`utils/wallet/profiles.ts` (Arbitrum, Ethereum, Polygon, Plasma and Tron on utexo;
+local EVM 31337 on regtest), checks the address before the prompt, and commits the
+destination hash as the native `burn_reason`. The routes are not advertised in
+`getInfo()`, and a request with the old `burnRecipient` is refused: there is no
+address-only fallback. The local burn form takes the chain and address and uses that
+chain's configured endpoint. The burn journal keeps the destination for recovery;
+burns saved by earlier versions stay readable and are not rewritten. An existing
 local burn can be shared through the bridge's Existing burn → From wallet flow;
 proof sharing requires approval. Message signing remains unavailable for RGB Lib.
-RLN burn behavior is unchanged. After updating, fully reload the demo and reconnect
-the WalletConnect session so it negotiates burn/proof methods.
+RLN has no payout routes, so burn is off for RLN. The optional WebRGB methods
+`createUtxos`, `getBtcBalance`, `refresh` and `getAssetMetadata` are not served
+yet: WalletConnect does not carry them. After updating, fully reload the demo and
+reconnect the WalletConnect session so it negotiates burn/proof methods.
 
 WebRGB `getReceivedMint({ invoice })` is served when the installed SDK and engine
 have it. A bridge site polls it with an invoice from `witnessReceive` or

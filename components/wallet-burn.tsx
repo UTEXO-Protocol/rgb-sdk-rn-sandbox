@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppColors as C } from '@/constants/theme';
 import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
-import { burnMaxAmount, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
+import { burnMaxAmount, burnPayout, formatBurnAmount, LOCAL_BURN_ORIGIN, payoutChainIdFromInput, payoutChainLabel, prepareLocalBurn } from '@/utils/wallet/burn';
 
 export function WalletBurn({ state, wallet, initialAssetId = '' }: { state: DemoWalletState; wallet: DemoWalletService; initialAssetId?: string }) {
   const assets = state.assets.filter((asset) => asset.schema === 'BFA');
@@ -27,7 +27,7 @@ export function WalletBurn({ state, wallet, initialAssetId = '' }: { state: Demo
   return <View style={styles.group}>
     <Text style={styles.heading}>Burn for an EVM or Tron payout</Text>
     <Text style={styles.text}>Burn BFA tokens here, then use the saved proof on the bridge website to request your payout.</Text>
-    {!state.burnAvailable && <Text style={styles.warning}>Burn requires native burn and proof export support. RLN also requires Ethereum RPC configuration.</Text>}
+    {!state.burnAvailable && <Text style={styles.warning}>Burn requires native burn and proof export support and payout routes for this network. RLN also requires Ethereum RPC configuration.</Text>}
     {!assets.length && <Text style={styles.text}>No BFA assets in this wallet. Receive a bridge asset first.</Text>}
     {pending && <Text accessibilityRole="alert" style={styles.warning}>
       A burn is still processing or its outcome needs review. Check Activity and refresh the wallet before starting another burn.
@@ -62,9 +62,9 @@ export function WalletBurn({ state, wallet, initialAssetId = '' }: { state: Demo
         placeholder="e.g. 1 or tron:728126428" placeholderTextColor={C.textTertiary}
         autoCapitalize="none" autoCorrect={false}
         editable={!unavailable} style={styles.input} />
-      <Text style={styles.hint}>{destinationRoutes
-        ? destinationRoutes.map(({ chainId }) => `${payoutChainLabel(chainId)}: ${chainId.replace('eip155:', '')}`).join(' · ')
-        : 'Ethereum: 1 · Arbitrum One: 42161 · Tron: tron:728126428 (Shasta: tron:2494104990, Nile: tron:3448148188)'}</Text>
+      <Text style={styles.hint}>{destinationRoutes?.length
+        ? destinationRoutes.map(({ chainId, dstEid }) => `${payoutChainLabel(chainId)}: ${chainId.replace('eip155:', '')} (${dstEid ? `endpoint ${dstEid}` : 'direct'})`).join(' · ')
+        : 'No payout routes are configured for this network.'}</Text>
       <Text style={styles.label}>Payout address</Text>
       <TextInput accessibilityLabel="Payout address" value={payoutAddress} onChangeText={setPayoutAddress}
         placeholder="0x… or T…" placeholderTextColor={C.textTertiary} autoCapitalize="none" autoCorrect={false}
@@ -97,8 +97,8 @@ export function WalletBurn({ state, wallet, initialAssetId = '' }: { state: Demo
         })();
       }}><Text style={styles.buttonText}>Copy transaction ID</Text></Pressable>
       {!!copied && <Text accessibilityLiveRegion="polite" style={styles.hint}>{copied}</Text>}
-      <Text style={styles.text}>Payout: {payoutChainLabel(latest.metadata.payout.chainId)}</Text>
-      <Text selectable style={styles.mono}>{latest.metadata.payout.address}</Text>
+      <Text style={styles.text}>Payout: {payoutChainLabel(burnPayout(latest).chainId)}</Text>
+      <Text selectable style={styles.mono}>{burnPayout(latest).address}</Text>
       <Text style={styles.hint}>To request the payout, connect this wallet on the bridge website and choose Existing burn → From wallet. Select this transaction if several burns are listed.</Text>
     </View>}
   </View>;

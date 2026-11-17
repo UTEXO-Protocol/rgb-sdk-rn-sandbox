@@ -258,8 +258,10 @@ export class DemoWalletService {
       this.set({
         ready: true,
         address: opened.address,
+        // A burn commits a routed destination: without routes there is none to burn to.
         burnAvailable:
-          this.profile.burnEnabled(network) && capabilities.burn && capabilities.consignment,
+          this.profile.burnEnabled(network) && capabilities.burn && capabilities.consignment
+          && !!this.profile.burnDestinationRoutes?.(network)?.length,
         burns,
         message: 'Wallet ready. Fund the address, then prepare receive UTXOs.',
       });
@@ -566,8 +568,9 @@ export class DemoWalletService {
         `Asset ID: ${params.assetId}`,
         `Amount: ${formatBurnAmount(params.amount, asset!.precision)} (${params.amount} base units)`,
         `RGB network: ${metadata.network}`,
-        `Payout network: ${payoutChainLabel(metadata.payout.chainId)} (${metadata.payout.chainId})`,
-        `Payout address: ${metadata.payout.address}`,
+        `Payout network: ${payoutChainLabel(metadata.burnDestination.chainId)} (${metadata.burnDestination.chainId})`,
+        `Payout address: ${metadata.burnDestination.address}`,
+        `Payout endpoint: ${metadata.burnDestination.dstEid || 'direct'}`,
         `BTC fee rate: ${params.feeRate} sat/vB`,
         `Confirmations: ${params.minConfirmations}`,
         'This permanently burns tokens. The proof stays in your wallet. Submit it on the bridge website to request the payout.',
@@ -651,11 +654,12 @@ export class DemoWalletService {
       confirm: (request: WebRgbApproval) => {
         const isBurn = request.method === 'burnAsset';
         const isProof = request.method === 'getConsignment';
-        const recipient = request.params.burnRecipient as
-          | { chainId: string; address: string }
+        // The SDK has already checked this destination against the profile's routes.
+        const destination = request.params.burnDestination as
+          | { chainId: string; address: string; dstEid: number }
           | undefined;
         const details = isBurn
-          ? `Asset: ${request.params.assetId}\nAmount: ${request.params.amount} base units\nRGB network: ${this.state.network}\nPayout network: ${recipient?.chainId}\nPayout address: ${recipient?.address}\nBTC fee rate: ${request.params.feeRate} sat/vB\nConfirmations: ${request.params.minConfirmations}\nThis permanently burns tokens and allows this website to receive the burn proof.`
+          ? `Asset: ${request.params.assetId}\nAmount: ${request.params.amount} base units\nRGB network: ${this.state.network}\nPayout network: ${destination && payoutChainLabel(destination.chainId)} (${destination?.chainId})\nPayout address: ${destination?.address}\nPayout endpoint: ${destination?.dstEid || 'direct'}\nBTC fee rate: ${request.params.feeRate} sat/vB\nConfirmations: ${request.params.minConfirmations}\nThis permanently burns tokens and allows this website to receive the burn proof.`
           : isProof
             ? `Share the burn proof and its asset history with this website?\nAsset: ${request.params.assetId}\nTransaction: ${request.params.txid}`
             : `Asset: ${request.params.assetId ?? 'Any asset (including a new asset)'}\nAmount: ${request.params.amount ?? 'Any amount'} base units\nNetwork: ${this.state.network}\nConfirmations: ${request.params.minConfirmations}\nExpires in: ${request.params.durationSeconds} seconds`;

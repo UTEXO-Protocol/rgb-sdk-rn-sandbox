@@ -62,16 +62,12 @@ export function createDemoRgbProvider(
   const backend: WalletConnectBackend = {
     enable: wrap('enable', () => provider.enable()),
     getInfo: wrap('getInfo', async () => {
-      // The bridge UI no longer reads the V1 route list. The routes stay
-      // wallet-side (profiles.ts) and the SDK checks every burnDestination
-      // against them, so they are not advertised to websites.
-      const {
-        burnDestinationVersion: _version,
-        burnDestinationRoutes: _routes,
-        ...info
-      } = await provider.getInfo();
+      // Payout routes stay wallet-side (profiles.ts): the SDK checks every
+      // burnDestination against them and does not advertise them.
+      const info = await provider.getInfo();
       // List only what this backend serves: a listed method must not reject
-      // with METHOD_NOT_SUPPORTED.
+      // with METHOD_NOT_SUPPORTED. createUtxos, getBtcBalance, refresh and
+      // getAssetMetadata are not served yet: WalletConnect does not carry them.
       const methods = info.methods.filter(
         (method) => method in backend && (options.burnEnabled || !BURN_METHODS.has(method)),
       );
