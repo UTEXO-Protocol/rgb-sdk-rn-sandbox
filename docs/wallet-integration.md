@@ -194,6 +194,17 @@ proof sharing requires approval. Message signing remains unavailable for RGB Lib
 RLN burn behavior is unchanged. After updating, fully reload the demo and reconnect
 the WalletConnect session so it negotiates burn/proof methods.
 
+WebRGB `getReceivedMint({ invoice })` is served when the installed SDK and engine
+have it. A bridge site polls it with an invoice from `witnessReceive` or
+`blindReceive` to check a prepared BFA mint before the EVM lock is paid. The wallet
+shows no prompt: the SDK accepts only an invoice this wallet created, refreshes
+incoming transfers, and returns the checked mint terms, `null` while pending, or
+an error for a failed receive or an expired invoice. The call runs through the
+same operation queue as the other WalletConnect methods. Both receive methods use
+the demo's minimum invoice window (`MIN_INVOICE_DURATION_SECONDS`). Sessions
+approved before this method existed keep working but get `rgb_getReceivedMint`
+only after reconnecting.
+
 Install the local dependency and rebuild (Expo Go cannot load native bindings):
 
 ```sh
