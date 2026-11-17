@@ -4,8 +4,15 @@
  * The sender issues an NIA asset and sends it twice: to a blinded UTXO and to
  * a witness (address-style) invoice. Each send must settle on both sides and
  * move exactly the invoiced amount. Leaves `niaAssetId` for L3/L4.
+ *
+ * Before and after the witness send it also calls `getReceivedMint` on the real
+ * engine, natively and through WebRGB. An NIA receive is not a BFA mint, so the
+ * answer is "no mint" (`undefined` / `null`), and the WebRGB checks on the
+ * invoice (own invoice, names an asset) run against real wallet history. A real
+ * mint needs the EVM bridge, which the local stack does not run.
  */
 import { expectFields, expectNoWireKeys, HEX_32 } from '@utexo/rgb-sdk-core/conformance';
+import { BurnOperations, WebRgbProvider } from '@utexo/rgb-sdk/webrgb';
 
 import { assert, assertEq } from '../harness';
 import { settle, settledBalance, type RgbLibScenarioContext } from '../rgb-lib-harness';
@@ -14,6 +21,28 @@ const ISSUED = 10_000;
 const BLIND_AMOUNT = 1_000;
 const WITNESS_AMOUNT = 500;
 const WITNESS_SATS = 1_000;
+
+/** A WebRGB session over one wallet; getReceivedMint never prompts. */
+function webRgb(wallet: RgbLibScenarioContext['receiver']['wallet']) {
+  return new WebRgbProvider(wallet, {
+    origin: 'https://e2e.example',
+    sessionApproved: true,
+    confirm: async () => {
+      throw new Error('getReceivedMint must not ask the user');
+    },
+    burn: { operations: new BurnOperations(wallet, { readAll: async () => [], write: async () => undefined }) },
+  });
+}
+
+async function rejectCode(what: string, fn: () => Promise<unknown>): Promise<string> {
+  try {
+    await fn();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  assert(false, `${what} should have been rejected`);
+  return '';
+}
 
 export async function scenarioL2(ctx: RgbLibScenarioContext): Promise<void> {
   const { step } = ctx;
@@ -88,6 +117,34 @@ export async function scenarioL2(ctx: RgbLibScenarioContext): Promise<void> {
     () => receiver.witnessReceive({ assetId: asset.assetId, amount: WITNESS_AMOUNT }),
     (r) => r
   );
+  const receiverWebRgb = webRgb(receiver);
+  await step('getReceivedMint is served', async () => {
+    assert(typeof receiver.getReceivedMint === 'function', 'the facade must expose getReceivedMint');
+    const { methods } = await receiverWebRgb.getInfo();
+    assert(methods.includes('getReceivedMint'), 'WebRGB getInfo().methods must list getReceivedMint');
+    return methods.length;
+  }, (n) => ({ methods: n }));
+  await step('getReceivedMint before the send: no mint', async () => {
+    const native = await receiver.getReceivedMint!(witness.recipientId, { refreshIncoming: true });
+    assertEq(native, undefined, 'native getReceivedMint for an NIA receive');
+    const offline = await receiver.getReceivedMint!(witness.recipientId);
+    assertEq(offline, undefined, 'native getReceivedMint without a refresh');
+    const viaWebRgb = await receiverWebRgb.getReceivedMint({ invoice: witness.invoice });
+    assertEq(viaWebRgb, null, 'WebRGB getReceivedMint for an NIA receive');
+    return { native: String(native), webrgb: String(viaWebRgb) };
+  }, (r) => r);
+  await step('getReceivedMint refuses invoices it must not answer for', async () => {
+    const foreign = await rejectCode('a foreign invoice', () =>
+      webRgb(sender).getReceivedMint({ invoice: witness.invoice })
+    );
+    assertEq(foreign, 'INVALID_PARAMS', 'an invoice the wallet did not create');
+    const anyAsset = await rejectCode('an invoice without an asset', () =>
+      receiverWebRgb.getReceivedMint({ invoice: blind.invoice })
+    );
+    assertEq(anyAsset, 'INVALID_PARAMS', 'the blind invoice names no asset');
+    return { foreign, anyAsset };
+  }, (r) => r);
+
   const witnessSend = await step(
     'onchainSend (witness)',
     () => sender.onchainSend({
@@ -112,4 +169,9 @@ export async function scenarioL2(ctx: RgbLibScenarioContext): Promise<void> {
     assertEq(inc.kind, 'ReceiveWitness', 'receiver witness transfer kind');
     return { sender: sent };
   }, (b) => b);
+  await step('getReceivedMint after the send settles: still no mint', async () => {
+    assertEq(await receiver.getReceivedMint!(witness.recipientId, { refreshIncoming: true }), undefined, 'native');
+    assertEq(await receiverWebRgb.getReceivedMint({ invoice: witness.invoice }), null, 'WebRGB');
+    return 'none';
+  }, (r) => r);
 }
