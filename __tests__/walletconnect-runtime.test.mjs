@@ -1024,7 +1024,7 @@ test('local burn converts decimal amounts exactly and persists without a website
   assert.equal(result.state, 'complete');
   assert.equal(native.burns.length, 1);
   assert.equal(native.burns[0].amount, '1250001');
-  const destination = { chainId: 'eip155:1', address: localBurnForm.payoutAddress, dstEid: 30101 };
+  const destination = { version: 1, chainId: 'eip155:1', address: localBurnForm.payoutAddress, dstEid: 30101 };
   assert.equal(native.burns[0].burnRecipient, burnDestinationReason(destination));
   assert.equal(result.metadata.origin, 'local:wallet');
   assert.equal(result.metadata.network, 'utexo');
@@ -1049,7 +1049,7 @@ test('local burn to Tron keeps the Base58Check address and commits its routed de
   prompt.resolve(true);
   const result = await task;
   assert.equal(result.state, 'complete');
-  const destination = { chainId: 'tron:728126428', address: tronAddress, dstEid: 30420 };
+  const destination = { version: 1, chainId: 'tron:728126428', address: tronAddress, dstEid: 30420 };
   assert.equal(native.burns[0].burnRecipient, burnDestinationReason(destination));
   assert.deepEqual(JSON.parse(JSON.stringify(result.metadata.burnDestination)), destination);
 });
@@ -1556,7 +1556,7 @@ test('local RGB Lib burns commit the routed destination and recover from their s
   prompt.resolve(true);
   const result = await task;
   assert.equal(result.state, 'complete', rgb.snapshot().error);
-  const destination = { chainId: 'eip155:42161', address: form.payoutAddress, dstEid: 0 };
+  const destination = { version: 1, chainId: 'eip155:42161', address: form.payoutAddress, dstEid: 0 };
   assert.deepEqual(JSON.parse(JSON.stringify(result.metadata.burnDestination)), destination);
   assert.equal(native.burns[0].burnRecipient, burnDestinationReason(destination));
   const key = 'utexo-burn-journal-v1:rgb:utexo:RGB-L1-saved-node-pubkey';

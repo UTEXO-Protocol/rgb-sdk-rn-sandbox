@@ -1,4 +1,4 @@
-import { burnDestinationReason, normalizeBurnDestination, type AnyBurnOperationRecord, type BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
+import { burnDestinationReason, normalizeBurnDestination, type BurnOperationRecord, type BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletAsset } from './types';
 
@@ -81,11 +81,9 @@ export function burnRouteFor(chainId: string, destinationRoutes: readonly BurnDe
   return routes[0];
 }
 
-/** The payout of a journal record, whether it was saved by this release or an earlier one. */
-export function burnPayout(record: AnyBurnOperationRecord): { chainId: string; address: string; dstEid?: number } {
-  if (record.version === 3) return record.metadata.burnDestination;
-  const { payout, burnDestination } = record.metadata;
-  return burnDestination ? { ...payout, dstEid: burnDestination.dstEid } : payout;
+/** The payout destination saved with a journal record. */
+export function burnPayout(record: BurnOperationRecord) {
+  return record.metadata.burnDestination;
 }
 
 export function prepareLocalBurn(input: LocalBurnInput, asset: WalletAsset | undefined, network: DemoWalletNetwork, destinationRoutes?: readonly BurnDestinationRoute[]) {
@@ -95,7 +93,7 @@ export function prepareLocalBurn(input: LocalBurnInput, asset: WalletAsset | und
   let burnDestination;
   try {
     // Addresses stay as entered: Tron Base58Check and EVM checksums are case-sensitive.
-    burnDestination = normalizeBurnDestination({ chainId: input.payoutChainId, address: input.payoutAddress.trim(), dstEid });
+    burnDestination = normalizeBurnDestination({ version: 1, chainId: input.payoutChainId, address: input.payoutAddress.trim(), dstEid });
   } catch {
     throw new Error(input.payoutChainId.startsWith('tron:')
       ? 'Enter a valid Tron address (T…).'

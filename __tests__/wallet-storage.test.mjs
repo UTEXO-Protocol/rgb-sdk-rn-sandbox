@@ -3,21 +3,24 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { normalizeBurnRecord } from '@utexo/rgb-sdk/webrgb';
+import { burnDestinationReason, normalizeBurnRecord } from '@utexo/rgb-sdk/webrgb';
 
 const source = ts.transpileModule(readFileSync(new URL('../utils/wallet/storage.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
 
-test('wallet journal keeps its account key and never rewrites an older record', async () => {
-  const legacy = {
-    origin: 'https://mint.example', state: 'pending',
-    request: { requestId: 'saved-id', network: 'regtest', assetId: 'rgb:test', amount: '5',
-      burnRecipient: { chainId: 'eip155:31337', address: '0x' + '12'.repeat(20) }, feeRate: 2, minConfirmations: 3 },
-  };
+const destination = { version: 1, chainId: 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 };
+const pending = {
+  id: 'saved-id',
+  params: { assetId: 'rgb:test', amount: '5', burnRecipient: burnDestinationReason(destination), feeRate: 2, minConfirmations: 3 },
+  metadata: { origin: 'https://mint.example', network: 'regtest', burnDestination: destination },
+  state: 'pending',
+};
+
+function openStore(initial) {
   const account = 'rgb:regtest:wallet';
   const key = `utexo-burn-journal-v1:${account}`;
-  let saved = JSON.stringify([legacy]), writes = 0, published;
+  const env = { saved: initial, writes: 0, published: undefined };
   const module = { exports: {} };
   vm.runInNewContext(source, {
     exports: module.exports,
@@ -25,30 +28,42 @@ test('wallet journal keeps its account key and never rewrites an older record', 
       if (name === '@utexo/rgb-sdk/webrgb') return { normalizeBurnRecord };
       assert.equal(name, '@react-native-async-storage/async-storage');
       return {
-        getItem: async name => { assert.equal(name, key); return saved; },
-        setItem: async (name, value) => { assert.equal(name, key); saved = value; writes++; },
+        getItem: async name => { assert.equal(name, key); return env.saved; },
+        setItem: async (name, value) => { assert.equal(name, key); env.saved = value; env.writes++; },
       };
     },
   });
-  const store = module.exports.createBurnStore(() => account, records => { published = records; });
-  const [record] = await store.readAll();
-  assert.equal(record.id, 'saved-id');
-  assert.equal(record.state, 'pending');
-  assert.equal(record.params.burnRecipient, '0'.repeat(24) + '12'.repeat(20));
-  assert.equal(writes, 0, 'Reading never rewrites the journal');
-  await store.write({ ...record, id: 'second-id', state: 'cancelled' });
-  const records = JSON.parse(saved);
-  assert.equal(records.length, 2);
-  // The v1 record is saved exactly as it was, in its own format.
-  assert.deepEqual(records[0], legacy);
-  assert.equal(published.length, 2);
-  assert.equal(published[0].id, 'saved-id');
-  assert.equal(published[0].state, 'pending');
-  // Updating the v1 record by its ID replaces it and keeps the other one.
-  await store.write({ ...record, state: 'cancelled' });
-  const updated = JSON.parse(saved);
-  assert.deepEqual(updated.map((item) => item.id), ['second-id', 'saved-id']);
-  saved = '{broken';
-  await assert.rejects(store.write(record));
-  assert.equal(writes, 2, 'Corrupt state must never be overwritten');
+  env.store = module.exports.createBurnStore(() => account, records => { env.published = records; });
+  return env;
+}
+
+test('wallet journal keeps its account key and replaces a record by its ID', async () => {
+  const env = openStore(JSON.stringify([pending]));
+  const [record] = await env.store.readAll();
+  assert.deepEqual(JSON.parse(JSON.stringify(record)), pending);
+  assert.equal(env.writes, 0, 'Reading never rewrites the journal');
+  await env.store.write({ ...record, id: 'second-id', state: 'cancelled' });
+  assert.deepEqual(JSON.parse(env.saved).map((item) => item.id), ['saved-id', 'second-id']);
+  assert.equal(env.published.length, 2);
+  await env.store.write({ ...record, state: 'cancelled' });
+  const updated = JSON.parse(env.saved);
+  assert.deepEqual(updated.map((item) => [item.id, item.state]), [['second-id', 'cancelled'], ['saved-id', 'cancelled']]);
+  env.saved = '{broken';
+  await assert.rejects(env.store.write(record));
+  assert.equal(env.writes, 2, 'Corrupt state must never be overwritten');
+});
+
+test('a record in an earlier format or with a mismatched commitment fails closed', async () => {
+  const legacy = {
+    origin: 'https://mint.example', state: 'pending',
+    request: { requestId: 'saved-id', network: 'regtest', assetId: 'rgb:test', amount: '5',
+      burnRecipient: { chainId: 'eip155:31337', address: destination.address }, feeRate: 2, minConfirmations: 3 },
+  };
+  const mismatched = { ...pending, params: { ...pending.params, burnRecipient: 'ab'.repeat(32) } };
+  for (const record of [legacy, mismatched]) {
+    const env = openStore(JSON.stringify([record]));
+    await assert.rejects(env.store.readAll());
+    await assert.rejects(env.store.write(pending));
+    assert.equal(env.writes, 0);
+  }
 });

@@ -1,7 +1,7 @@
 import type { WalletProtocol } from '@utexo/rgb-sdk-rn';
 // The shared contract type: the list holds transfers from either engine.
 import type { WalletTransfer } from '@utexo/rgb-sdk-core';
-import type { AnyBurnOperationRecord } from '@utexo/rgb-sdk/webrgb';
+import type { BurnOperationRecord } from '@utexo/rgb-sdk/webrgb';
 import type { AnyUtexoWallet } from './wallets';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletConnectSession } from '@utexo/webrgb-walletconnect';
@@ -46,7 +46,7 @@ export type DemoWalletState = {
   activeRequest: string;
   lastRequest: { method: string; status: 'completed' | 'failed'; error?: string } | null;
   burnAvailable: boolean;
-  burns: AnyBurnOperationRecord[];
+  burns: BurnOperationRecord[];
 };
 
 export type WalletAsset = {

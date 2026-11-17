@@ -14,7 +14,7 @@
 import {
   BurnOperations,
   burnDestinationReason,
-  type AnyBurnOperationRecord,
+  type BurnOperationRecord,
 } from '@utexo/rgb-sdk/webrgb';
 import { HEX_32 } from '@utexo/rgb-sdk-core/conformance';
 
@@ -30,15 +30,15 @@ import {
 const ISSUED = 5_000;
 const BURN_AMOUNT = 1_200;
 /** The demo's regtest bridge route (utils/wallet/profiles.ts), with a payout address. */
-const DESTINATION = { chainId: 'eip155:31337', address: '0x00000000000000000000000000000000000e2e01', dstEid: 0 };
+const DESTINATION = { version: 1 as const, chainId: 'eip155:31337', address: '0x00000000000000000000000000000000000e2e01', dstEid: 0 };
 
 function memoryStore() {
-  const records = new Map<string, AnyBurnOperationRecord>();
+  const records = new Map<string, BurnOperationRecord>();
   return {
     records,
     store: {
       readAll: async () => [...records.values()],
-      write: async (record: AnyBurnOperationRecord) => {
+      write: async (record: BurnOperationRecord) => {
         records.set(record.id, record);
       },
     },

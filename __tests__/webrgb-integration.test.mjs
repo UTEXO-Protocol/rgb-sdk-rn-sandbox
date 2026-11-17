@@ -186,7 +186,7 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
   const assetId = 'rgb:mock',
     txid = 'ab'.repeat(32),
     network = protocol === 'RGB_L1' ? 'utexo' : 'regtest';
-  const burnDestination = { chainId: protocol === 'RGB_L1' ? 'eip155:42161' : 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 };
+  const burnDestination = { version: 1, chainId: protocol === 'RGB_L1' ? 'eip155:42161' : 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 };
   const destinationRoutes = [{ chainId: burnDestination.chainId, dstEid: 0 }];
   const bytes = Buffer.alloc(100000, 37);
   const dapp = {
@@ -375,7 +375,7 @@ test('revoking a request during confirmation prevents the SDK from starting burn
     network: 'regtest',
     assetId: 'rgb:mock',
     amount: '5',
-    burnDestination: { chainId: 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 },
+    burnDestination: { version: 1, chainId: 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 },
   };
   const context = {
     origin: 'https://mint.example',
@@ -488,8 +488,8 @@ const UTEXO_ROUTES = [
   { chainId: 'eip155:1', dstEid: 30101 },
   { chainId: 'tron:728126428', dstEid: 30420 },
 ];
-const EVM_DESTINATION = { chainId: 'eip155:1', address: '0x' + 'ab'.repeat(20), dstEid: 30101 };
-const TRON_DESTINATION = { chainId: 'tron:728126428', address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', dstEid: 30420 };
+const EVM_DESTINATION = { version: 1, chainId: 'eip155:1', address: '0x' + 'ab'.repeat(20), dstEid: 30101 };
+const TRON_DESTINATION = { version: 1, chainId: 'tron:728126428', address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', dstEid: 30420 };
 // The Tron address's Base58Check payload: 0x41 and the 20 account bytes.
 const TRON_PAYLOAD = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c';
 
@@ -580,7 +580,10 @@ test('legacy, mixed or unrouted burn parameters are refused before the prompt', 
     ['burnRecipient next to burnDestination', { burnRecipient: { chainId: 'eip155:1', address: EVM_DESTINATION.address } }],
     ['old V1 object', { burnDestination: { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_DESTINATION.address } }],
     ['extra destination field', { burnDestination: { ...EVM_DESTINATION, hash: '0x' + '00'.repeat(32) } }],
-    ['missing endpoint', { burnDestination: { chainId: 'eip155:1', address: EVM_DESTINATION.address } }],
+    ['missing endpoint', { burnDestination: { version: 1, chainId: 'eip155:1', address: EVM_DESTINATION.address } }],
+    ['missing version', { burnDestination: { chainId: 'eip155:1', address: EVM_DESTINATION.address, dstEid: 30101 } }],
+    ['unsupported version', { burnDestination: { ...EVM_DESTINATION, version: 2 } }],
+    ['string version', { burnDestination: { ...EVM_DESTINATION, version: '1' } }],
     ['endpoint not in wallet config', { burnDestination: { ...EVM_DESTINATION, dstEid: 30109 } }],
     ['malformed address', { burnDestination: { ...EVM_DESTINATION, address: 'abcd' } }],
     ['wrong RGB network', { network: 'regtest' }],

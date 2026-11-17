@@ -186,15 +186,17 @@ specific environment variable names. Restart Metro after setting them. The websi
 link is `myapp://rgb-lib?uri=…`. WebRGB advertises the SDK's on-chain methods.
 RGB Lib supports local burns and WebRGB `burnAsset` / `getConsignment` when
 native burn and proof export are available. A website sends one
-`burnDestination: { chainId, address, dstEid }` with a native address. The SDK
+`burnDestination: { version: 1, chainId, address, dstEid }` with a native address;
+a missing or other `version` is refused before the prompt. The SDK
 accepts only an exact chain and endpoint pair from the payout routes in
 `utils/wallet/profiles.ts` (Arbitrum, Ethereum, Polygon, Plasma and Tron on utexo;
 local EVM 31337 on regtest), checks the address before the prompt, and commits the
 destination hash as the native `burn_reason`. The routes are not advertised in
 `getInfo()`, and a request with the old `burnRecipient` is refused: there is no
 address-only fallback. The local burn form takes the chain and address and uses that
-chain's configured endpoint. The burn journal keeps the destination for recovery;
-burns saved by earlier versions stay readable and are not rewritten. An existing
+chain's configured endpoint. The burn journal keeps the destination for recovery and
+checks every record against the WebRGB commitment: a record in an earlier format is
+not read, and burns stop until it is removed. An existing
 local burn can be shared through the bridge's Existing burn → From wallet flow;
 proof sharing requires approval. Message signing remains unavailable for RGB Lib.
 RLN has no payout routes, so burn is off for RLN. The optional WebRGB methods

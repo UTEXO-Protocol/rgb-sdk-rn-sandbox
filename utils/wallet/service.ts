@@ -656,7 +656,7 @@ export class DemoWalletService {
         const isProof = request.method === 'getConsignment';
         // The SDK has already checked this destination against the profile's routes.
         const destination = request.params.burnDestination as
-          | { chainId: string; address: string; dstEid: number }
+          | { version: 1; chainId: string; address: string; dstEid: number }
           | undefined;
         const details = isBurn
           ? `Asset: ${request.params.assetId}\nAmount: ${request.params.amount} base units\nRGB network: ${this.state.network}\nPayout network: ${destination && payoutChainLabel(destination.chainId)} (${destination?.chainId})\nPayout address: ${destination?.address}\nPayout endpoint: ${destination?.dstEid || 'direct'}\nBTC fee rate: ${request.params.feeRate} sat/vB\nConfirmations: ${request.params.minConfirmations}\nThis permanently burns tokens and allows this website to receive the burn proof.`
