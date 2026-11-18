@@ -133,16 +133,15 @@ export async function scenarioL2(ctx: RgbLibScenarioContext): Promise<void> {
     assertEq(viaWebRgb, null, 'WebRGB getReceivedMint for an NIA receive');
     return { native: String(native), webrgb: String(viaWebRgb) };
   }, (r) => r);
-  await step('getReceivedMint refuses invoices it must not answer for', async () => {
+  await step('getReceivedMint refuses a foreign invoice and serves one without an asset', async () => {
     const foreign = await rejectCode('a foreign invoice', () =>
       webRgb(sender).getReceivedMint({ invoice: witness.invoice })
     );
     assertEq(foreign, 'INVALID_PARAMS', 'an invoice the wallet did not create');
-    const anyAsset = await rejectCode('an invoice without an asset', () =>
-      receiverWebRgb.getReceivedMint({ invoice: blind.invoice })
-    );
-    assertEq(anyAsset, 'INVALID_PARAMS', 'the blind invoice names no asset');
-    return { foreign, anyAsset };
+    // A first receive of an asset the wallet does not hold names no asset.
+    const anyAsset = await receiverWebRgb.getReceivedMint({ invoice: blind.invoice });
+    assertEq(anyAsset, null, 'the blind invoice names no asset and has no mint');
+    return { foreign, anyAsset: String(anyAsset) };
   }, (r) => r);
 
   const witnessSend = await step(
