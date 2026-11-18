@@ -209,7 +209,10 @@ have it. A bridge site polls it with an invoice from `witnessReceive` or
 `blindReceive` to check a prepared BFA mint before the EVM lock is paid. The wallet
 shows no prompt: the SDK accepts only an invoice this wallet created, refreshes
 incoming transfers, and returns the checked mint terms, `null` while pending, or
-an error for a failed receive or an expired invoice. The call runs through the
+an error for a failed receive or an expired invoice. The invoice may omit the
+asset, so a wallet can receive the first mint of an asset: RGB Lib reads `assetId`
+from the checked consignment, and the site must compare it with the selected asset
+before paying. The call runs through the
 same operation queue as the other WalletConnect methods. Both receive methods use
 the demo's minimum invoice window (`MIN_INVOICE_DURATION_SECONDS`). Sessions
 approved before this method existed keep working but get `rgb_getReceivedMint`
