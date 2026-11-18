@@ -120,7 +120,7 @@ The website must request the same network. For the bridge frontend set
 stack; restart Vite after changing its environment and reconnect the website.
 
 WebRGB and its WalletConnect adapter use the published npm packages
-`@utexo/webrgb@^0.1.3` and `@utexo/webrgb-walletconnect@^0.1.3`.
+`@utexo/webrgb@0.1.7` and `@utexo/webrgb-walletconnect@0.1.7`.
 The SDK pins RLN `0.17.0-beta.3`. Install with `npm install --install-strategy=nested`;
 on macOS the SDK downloads the iOS bindings during installation, and Android
 resolves its bindings through Gradle. Follow the native build instructions in

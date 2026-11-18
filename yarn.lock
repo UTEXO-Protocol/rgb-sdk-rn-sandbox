@@ -2605,18 +2605,18 @@
     "@noble/hashes" "^1.8.0"
     "@walletconnect/utils" "^2.25.0"
 
-"@utexo/webrgb-walletconnect@github:UTEXO-Protocol/webrgb-walletconnect#d7bd504edeafd846d97722a53e52f9fec312c009":
-  version "1.0.0-next.0"
-  resolved "git+ssh://git@github.com/UTEXO-Protocol/webrgb-walletconnect.git#d7bd504edeafd846d97722a53e52f9fec312c009"
-  integrity sha512-ZCK2Qq2Siu/BwZ0LNk9SrE3rWWk9h+SpYWen9JiWLSJl3Sw6uiQ7MqOJGZQQzbdszyN02CvxTDj0EYC6U1kQjA==
+"@utexo/webrgb-walletconnect@0.1.7":
+  version "0.1.7"
+  resolved "https://registry.npmjs.org/@utexo/webrgb-walletconnect/-/webrgb-walletconnect-0.1.7.tgz"
+  integrity sha512-eAgzGwrx1wjO3ssJPoFosdYG/LVvZ3uDFO8Yk5lQgNiX4nCT70rQfW71hr+1Uyut/lXZAUqaBsIEhe9oEfTrvQ==
   dependencies:
     "@noble/hashes" "^1.8.0"
     "@walletconnect/utils" "^2.25.0"
 
-"@utexo/webrgb@0.1.6", "@utexo/webrgb@^0.1.3", "@utexo/webrgb@^0.1.6":
-  version "0.1.6"
-  resolved "https://registry.npmjs.org/@utexo/webrgb/-/webrgb-0.1.6.tgz"
-  integrity sha512-E1JPvjicdM9rpYtBzC23F0jgVd2PQuYxIT6kEZNJUSim/ZZXcEOGWJkLCA2CcwLqLl5NTl95y4NBP3t8YhJXxw==
+"@utexo/webrgb@^0.1.3", "@utexo/webrgb@^0.1.7", "@utexo/webrgb@0.1.7":
+  version "0.1.7"
+  resolved "https://registry.npmjs.org/@utexo/webrgb/-/webrgb-0.1.7.tgz"
+  integrity sha512-SKbd3WC5GXYPRypdZjG+nMDqmr2jrcgG+YvFo2ezGG0FSi88/PG1GyBfJ0gGdv51yyFiJEQKIsJWmXCxx/R1SA==
 
 "@walletconnect/core@2.25.0":
   version "2.25.0"
