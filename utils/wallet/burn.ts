@@ -1,4 +1,4 @@
-import { burnDestinationHash, createBurnDestination, encodeEvmBurnRecipient, encodeTronBurnRecipient, type BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
+import { burnDestinationReason, normalizeBurnDestination, type BurnOperationRecord, type BurnDestinationRoute } from '@utexo/rgb-sdk/webrgb';
 import type { DemoWalletNetwork } from '../env';
 import type { WalletAsset } from './types';
 
@@ -11,7 +11,7 @@ export type LocalBurnInput = {
   payoutAddress: string;
 };
 
-// CAIP-2 Tron chains accepted by the SDK burn recipient validator.
+// Labels for CAIP-2 Tron chains; a burn still needs a configured route.
 const TRON_CHAINS: Record<string, string> = {
   'tron:728126428': 'Tron',
   'tron:2494104990': 'Tron Shasta',
@@ -72,37 +72,41 @@ export function assertBurnBalance(amount: string, available: number | undefined)
     throw new Error('Amount exceeds the available asset balance.');
 }
 
+/** The configured endpoint for a chain; the wallet owns routes, the form names only the chain. */
+export function burnRouteFor(chainId: string, destinationRoutes: readonly BurnDestinationRoute[] | undefined): BurnDestinationRoute {
+  if (!destinationRoutes?.length) throw new Error('Burn has no payout routes on this network.');
+  const routes = destinationRoutes.filter((route) => route.chainId === chainId);
+  if (!routes.length) throw new Error('This wallet has no payout route for that chain.');
+  if (routes.length > 1) throw new Error('This chain has several payout endpoints; the demo supports one per chain.');
+  return routes[0];
+}
+
+/** The payout destination saved with a journal record. */
+export function burnPayout(record: BurnOperationRecord) {
+  return record.metadata.burnDestination;
+}
+
 export function prepareLocalBurn(input: LocalBurnInput, asset: WalletAsset | undefined, network: DemoWalletNetwork, destinationRoutes?: readonly BurnDestinationRoute[]) {
   if (!asset || asset.assetId !== input.assetId || asset.schema !== 'BFA')
     throw new Error('Select a BFA asset held by this wallet.');
-  const address = input.payoutAddress.trim();
-  let recipient: string;
-  let payoutAddress: string;
-  if (/^eip155:[1-9][0-9]*$/.test(input.payoutChainId)) {
-    recipient = encodeEvmBurnRecipient(address);
-    payoutAddress = address.toLowerCase();
-  } else if (TRON_CHAINS[input.payoutChainId]) {
-    recipient = encodeTronBurnRecipient(address);
-    // Base58Check is case-sensitive; keep the address exactly as entered.
-    payoutAddress = address;
-  } else {
-    throw new Error('Enter an EVM chain ID or a supported Tron chain.');
+  const { dstEid } = burnRouteFor(input.payoutChainId, destinationRoutes);
+  let burnDestination;
+  try {
+    // Addresses stay as entered: Tron Base58Check and EVM checksums are case-sensitive.
+    burnDestination = normalizeBurnDestination({ version: 1, chainId: input.payoutChainId, address: input.payoutAddress.trim(), dstEid });
+  } catch {
+    throw new Error(input.payoutChainId.startsWith('tron:')
+      ? 'Enter a valid Tron address (T…).'
+      : 'Enter a valid EVM address (0x…).');
   }
-  const payout = { chainId: input.payoutChainId, address: payoutAddress };
-  const burnDestination = destinationRoutes ? createBurnDestination(payout, destinationRoutes) : undefined;
-  if (burnDestination) recipient = burnDestinationHash(burnDestination).slice(2);
   const amount = burnBaseUnits(input.amount, asset.precision);
   assertBurnBalance(amount, asset.balance.spendable);
   return {
     params: {
-      assetId: asset.assetId, amount, burnRecipient: recipient,
+      assetId: asset.assetId, amount, burnRecipient: burnDestinationReason(burnDestination),
       // Same wallet defaults as the SDK WebRGB burn provider.
       feeRate: 2, minConfirmations: 3,
     },
-    metadata: {
-      origin: LOCAL_BURN_ORIGIN, network,
-      payout,
-      ...(burnDestination && { burnDestination }),
-    },
+    metadata: { origin: LOCAL_BURN_ORIGIN, network, burnDestination },
   };
 }

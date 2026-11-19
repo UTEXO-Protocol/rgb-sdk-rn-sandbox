@@ -1597,6 +1597,11 @@
   resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-1.7.0.tgz"
   integrity sha512-HXydb0DgzTpDPwbVeDGCG1gIu7X6+AuU6Zl6av/E/KG8LMsvPntvq+w17CHRpKBmN6Ybdrt1eP3k4cj8DJa78w==
 
+"@noble/hashes@2.0.1":
+  version "2.0.1"
+  resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-2.0.1.tgz"
+  integrity sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==
+
 "@noble/hashes@2.4.0":
   version "2.4.0"
   resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz"
@@ -2548,10 +2553,10 @@
     "@urql/core" "^5.1.2"
     wonka "^6.3.2"
 
-"@utexo/rgb-sdk-core@^1.0.0-beta.10", "@utexo/rgb-sdk-core@1.0.0-beta.10":
-  version "1.0.0-beta.10"
-  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-core/-/rgb-sdk-core-1.0.0-beta.10.tgz"
-  integrity sha512-FkU6EXqVkOCkKqeb608rWg1xCMOGcZfyy90+Rz+47N6CoIk+JZEr+XbYPgTTY5iy0frAPtP4//hLcopn6seDzg==
+"@utexo/rgb-sdk-core@^1.0.0-beta.11", "@utexo/rgb-sdk-core@1.0.0-beta.11":
+  version "1.0.0-beta.11"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-core/-/rgb-sdk-core-1.0.0-beta.11.tgz"
+  integrity sha512-EnZcLgwrb3phaLf7rIbKavpyZb+C2SEPq2EPdIULk7z0PDS1bR7pgylkXN00neB/k/RmkYlFD2aeD2jV//ooTg==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "3.0.0"
@@ -2582,22 +2587,23 @@
     "@utexo/rgb-sdk-core" "1.0.0-beta.9"
     "@utexo/webrgb-walletconnect" "0.1.3"
 
-"@utexo/rgb-sdk-rn@1.0.0-beta.41":
-  version "1.0.0-beta.41"
-  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.41.tgz"
-  integrity sha512-lPCP2dk1PBeI6VpoeqRm651St0zB8aVzhwCUsRlcBNAX8vJOsegfZOs+QRMJKeSiaV6rgjA2eyhRVxayHAFkZg==
+"@utexo/rgb-sdk-rn@1.0.0-beta.42":
+  version "1.0.0-beta.42"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk-rn/-/rgb-sdk-rn-1.0.0-beta.42.tgz"
+  integrity sha512-qpVwFaR4nNkNfoKNtdJ7411IuGu+ud6duHoN6Cdkysgv7ovcjfSOQL2h9eOB51ZTI/NQDtrax7pIBB5fYMqyhw==
   dependencies:
+    "@noble/hashes" "2.0.1"
     "@scure/bip32" "^2.0.1"
 
-"@utexo/rgb-sdk@1.0.0-beta.10":
-  version "1.0.0-beta.10"
-  resolved "https://registry.npmjs.org/@utexo/rgb-sdk/-/rgb-sdk-1.0.0-beta.10.tgz"
-  integrity sha512-yc+aVwlwUCInjY8dXv/GeDDr7TK5Wjx42PVaAfhGUfLXS864HKVZU0fz8qqLwR2T3nOPODoE+F8Sq5WIqbldiw==
+"@utexo/rgb-sdk@1.0.0-beta.11":
+  version "1.0.0-beta.11"
+  resolved "https://registry.npmjs.org/@utexo/rgb-sdk/-/rgb-sdk-1.0.0-beta.11.tgz"
+  integrity sha512-hbSvxCGA0u2l7BazpzRdLZu2IowxH/H5Fxo9UQCVPScgNHNSKTQ0u08LbqdiAJeZtc7as6O5pRgQnlp38WVZuA==
   dependencies:
     "@noble/hashes" "^2.0.1"
     "@scure/base" "^2.0.0"
 
-"@utexo/webrgb-walletconnect@^0.1.3", "@utexo/webrgb-walletconnect@0.1.3":
+"@utexo/webrgb-walletconnect@0.1.3":
   version "0.1.3"
   resolved "https://registry.npmjs.org/@utexo/webrgb-walletconnect/-/webrgb-walletconnect-0.1.3.tgz"
   integrity sha512-jry9KjMgZM4lHFVU6M5hLFgPZphvey8dac23hzudEqSwPyTRIgokLE4GJhvDg+hqIFt8BwkTh99Uyg8kbg8aWg==
@@ -2605,10 +2611,18 @@
     "@noble/hashes" "^1.8.0"
     "@walletconnect/utils" "^2.25.0"
 
-"@utexo/webrgb@^0.1.3":
-  version "0.1.3"
-  resolved "https://registry.npmjs.org/@utexo/webrgb/-/webrgb-0.1.3.tgz"
-  integrity sha512-8eL38yVP9HLMkJuJ+RYCnDdGuc2lmQLYNNAuXnIkxfg0VXAC92Llw1NNhPcvxUQedFhYQulm41oqbSgAk5Xqyg==
+"@utexo/webrgb-walletconnect@0.1.7":
+  version "0.1.7"
+  resolved "https://registry.npmjs.org/@utexo/webrgb-walletconnect/-/webrgb-walletconnect-0.1.7.tgz"
+  integrity sha512-eAgzGwrx1wjO3ssJPoFosdYG/LVvZ3uDFO8Yk5lQgNiX4nCT70rQfW71hr+1Uyut/lXZAUqaBsIEhe9oEfTrvQ==
+  dependencies:
+    "@noble/hashes" "^1.8.0"
+    "@walletconnect/utils" "^2.25.0"
+
+"@utexo/webrgb@^0.1.3", "@utexo/webrgb@^0.1.7", "@utexo/webrgb@0.1.7":
+  version "0.1.7"
+  resolved "https://registry.npmjs.org/@utexo/webrgb/-/webrgb-0.1.7.tgz"
+  integrity sha512-SKbd3WC5GXYPRypdZjG+nMDqmr2jrcgG+YvFo2ezGG0FSi88/PG1GyBfJ0gGdv51yyFiJEQKIsJWmXCxx/R1SA==
 
 "@walletconnect/core@2.25.0":
   version "2.25.0"

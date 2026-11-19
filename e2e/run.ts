@@ -36,6 +36,7 @@ import { scenarioL1 } from './scenarios/l1-rgb-lib-onchain';
 import { scenarioL2 } from './scenarios/l2-rgb-lib-assets';
 import { scenarioL3 } from './scenarios/l3-rgb-lib-bfa-burn';
 import { scenarioL4 } from './scenarios/l4-rgb-lib-backup';
+import { scenarioL5 } from './scenarios/l5-rgb-lib-begin-end';
 
 type Scenario =
   | { id: string; title: string; engine: 'RGB_LN'; run: (ctx: ScenarioContext) => Promise<void> }
@@ -53,6 +54,7 @@ const SCENARIOS: Scenario[] = [
   { id: 'L2', title: 'rgb-lib asset issue & sends', engine: 'RGB_L1', run: scenarioL2 },
   { id: 'L3', title: 'rgb-lib BFA burn path', engine: 'RGB_L1', run: scenarioL3 },
   { id: 'L4', title: 'rgb-lib backup & restore', engine: 'RGB_L1', run: scenarioL4 },
+  { id: 'L5', title: 'rgb-lib prepare, approve, submit', engine: 'RGB_L1', run: scenarioL5 },
 ];
 
 export const SCENARIO_IDS = SCENARIOS.map((s) => s.id);

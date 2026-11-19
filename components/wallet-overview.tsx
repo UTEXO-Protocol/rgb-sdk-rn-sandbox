@@ -5,7 +5,7 @@ import { type DemoWalletService, type DemoWalletState } from '@/utils/wallet';
 import type { InvoiceKind } from '@/utils/wallet/types';
 import { mockFaucetEnabled } from '@/utils/mock-faucet';
 import { WalletBurn } from './wallet-burn';
-import { LOCAL_BURN_ORIGIN, payoutChainLabel } from '@/utils/wallet/burn';
+import { burnPayout, LOCAL_BURN_ORIGIN, payoutChainLabel } from '@/utils/wallet/burn';
 import { canCancelInvoice, MIN_INVOICE_DURATION_MINUTES } from '@/utils/wallet/invoice';
 
 type Tab = 'Assets' | 'Receive' | 'Burn' | 'Activity' | 'Tools';
@@ -210,8 +210,8 @@ export function WalletOverview({ state, wallet }: { state: DemoWalletState; wall
         return <View key={`${record.metadata.origin}:${record.id}`} style={styles.item}>
           <Text style={styles.assetName}>Burn · {cancelled ? (record.error ? 'Failed before broadcast' : 'Cancelled before execution') : preparing ? 'Preparing' : pending ? (running ? 'Processing' : 'Outcome needs review') : (transfer?.status || 'Broadcast')}</Text>
           <Text style={styles.text}>{record.params.amount} base units · {local ? 'On this device' : record.metadata.origin}</Text>
-          <Text style={styles.text}>Payout: {payoutChainLabel(record.metadata.payout.chainId)}</Text>
-          <Text selectable style={styles.mono}>{record.metadata.payout.address}</Text>
+          <Text style={styles.text}>Payout: {payoutChainLabel(burnPayout(record).chainId)}</Text>
+          <Text selectable style={styles.mono}>{burnPayout(record).address}</Text>
           <Text selectable style={styles.mono}>{record.result?.txid || record.id}</Text>
           {!!record.error && <Text style={styles.error}>{record.error}</Text>}
           {pending && !running && <Text style={styles.error}>Inspect native history before another burn. This request will not be repeated automatically.</Text>}

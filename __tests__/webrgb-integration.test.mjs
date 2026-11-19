@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
-import { WebRgbError, WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationHash, createBurnDestination } from '@utexo/rgb-sdk/webrgb';
+import { WebRgbError, WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationReason } from '@utexo/rgb-sdk/webrgb';
 import * as invoicePolicy from '../utils/wallet/invoice.ts';
 
 const source = ts.transpileModule(
@@ -186,9 +186,8 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
   const assetId = 'rgb:mock',
     txid = 'ab'.repeat(32),
     network = protocol === 'RGB_L1' ? 'utexo' : 'regtest';
-  const payout = { chainId: protocol === 'RGB_L1' ? 'eip155:42161' : 'eip155:31337', address: '0x' + '12'.repeat(20) };
-  const destinationRoutes = protocol === 'RGB_L1' ? [{ chainId: 'eip155:42161', dstEid: 0 }] : undefined;
-  const burnDestination = destinationRoutes ? createBurnDestination(payout, destinationRoutes) : undefined;
+  const burnDestination = { version: 1, chainId: protocol === 'RGB_L1' ? 'eip155:42161' : 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 };
+  const destinationRoutes = [{ chainId: burnDestination.chainId, dstEid: 0 }];
   const bytes = Buffer.alloc(100000, 37);
   const dapp = {
     on: dappEvents.on.bind(dappEvents),
@@ -280,7 +279,7 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
     async burn(params) {
       assert.equal(records[0].state, 'pending');
       assert.equal(params.amount, '5');
-      assert.equal(params.burnRecipient, burnDestination ? burnDestinationHash(burnDestination).slice(2) : '0'.repeat(24) + '12'.repeat(20));
+      assert.equal(params.burnRecipient, burnDestinationReason(burnDestination));
       assert.equal(params.minConfirmations, 6);
       burns++;
       return { txid, batchTransferIdx: 8 };
@@ -343,8 +342,7 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
   assert.equal(invoice.invoice, 'rgb:invoice');
   assert.ok(invoice.expirationTimestamp - invoiceRequestedAt >= 10800, 'A one-hour dApp request receives a three-hour invoice');
   const result = await provider.burnAsset({
-    network, assetId, amount: '5', burnRecipient: payout,
-    ...(burnDestination && { burnDestination }), feeRate: 2, minConfirmations: 6,
+    network, assetId, amount: '5', burnDestination, feeRate: 2, minConfirmations: 6,
   });
   assert.deepEqual(result.burnDestination, burnDestination);
   assert.deepEqual(records[0].metadata.burnDestination, burnDestination);
@@ -377,7 +375,7 @@ test('revoking a request during confirmation prevents the SDK from starting burn
     network: 'regtest',
     assetId: 'rgb:mock',
     amount: '5',
-    burnRecipient: { chainId: 'eip155:31337', address: '0x' + '12'.repeat(20) },
+    burnDestination: { version: 1, chainId: 'eip155:31337', address: '0x' + '12'.repeat(20), dstEid: 0 },
   };
   const context = {
     origin: 'https://mint.example',
@@ -405,7 +403,7 @@ test('revoking a request during confirmation prevents the SDK from starting burn
         return true;
       },
       run: (_method, _args, action) => action(),
-      burn: emptyJournal(),
+      burn: { ...emptyJournal(), destinationRoutes: [{ chainId: 'eip155:31337', dstEid: 0 }] },
       burnEnabled: true,
     },
   );
@@ -473,14 +471,14 @@ test('demo network policy hides burn even when native code can burn', async () =
   assert.equal(burns, 0);
 });
 
-// ── V1 burn destination (bridge-fe sends it, the wallet checks it) ──────────
+// ── Burn destination (bridge-fe sends it, the wallet checks it) ──────────
 
 // Independent of the SDK: keccak256(abi.encode(typeHash, uint64, uint32, keccak256(bytes))).
-function referenceV1Hash({ destinationChainId, dstEid, recipient }) {
+function referenceHash(destinationChainId, dstEid, recipientHex) {
   const word = (n) => Buffer.from(BigInt(n).toString(16).padStart(64, '0'), 'hex');
   const typeHash = keccak_256(Buffer.from('UtexoBurnDestinationV1(uint64 destinationChainId,uint32 dstEid,bytes recipient)'));
-  return '0x' + Buffer.from(keccak_256(Buffer.concat([
-    typeHash, word(destinationChainId), word(dstEid), keccak_256(Buffer.from(recipient.slice(2), 'hex')),
+  return Buffer.from(keccak_256(Buffer.concat([
+    typeHash, word(destinationChainId), word(dstEid), keccak_256(Buffer.from(recipientHex, 'hex')),
   ]))).toString('hex');
 }
 
@@ -490,8 +488,10 @@ const UTEXO_ROUTES = [
   { chainId: 'eip155:1', dstEid: 30101 },
   { chainId: 'tron:728126428', dstEid: 30420 },
 ];
-const EVM_PAYOUT = { chainId: 'eip155:1', address: '0x' + 'ab'.repeat(20) };
-const TRON_PAYOUT = { chainId: 'tron:728126428', address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' };
+const EVM_DESTINATION = { version: 1, chainId: 'eip155:1', address: '0x' + 'ab'.repeat(20), dstEid: 30101 };
+const TRON_DESTINATION = { version: 1, chainId: 'tron:728126428', address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', dstEid: 30420 };
+// The Tron address's Base58Check payload: 0x41 and the 20 account bytes.
+const TRON_PAYLOAD = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c';
 
 function destinationWallet() {
   const records = [], burned = [], confirmed = [];
@@ -523,23 +523,17 @@ function destinationWallet() {
     burnEnabled: true,
   });
   const burn = (extra) => provider.burnAsset({
-    network: 'utexo', assetId, amount: '7', burnRecipient: EVM_PAYOUT, ...extra,
+    network: 'utexo', assetId, amount: '7', burnDestination: EVM_DESTINATION, ...extra,
   });
   return { provider, burn, records, burned, confirmed };
 }
 
-test('the SDK V1 hash matches the reference encoding for EVM and Tron payouts', () => {
-  const evm = createBurnDestination(EVM_PAYOUT, UTEXO_ROUTES);
-  assert.deepEqual(evm, { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_PAYOUT.address });
-  assert.equal(burnDestinationHash(evm), referenceV1Hash(evm));
-  const tron = createBurnDestination(TRON_PAYOUT, UTEXO_ROUTES);
-  assert.equal(tron.destinationChainId, 728126428);
-  assert.equal(tron.dstEid, 30420);
-  assert.match(tron.recipient, /^0x41[0-9a-f]{40}$/);
-  assert.equal(burnDestinationHash(tron), referenceV1Hash(tron));
+test('the SDK commitment matches the reference encoding for EVM and Tron payouts', () => {
+  assert.equal(burnDestinationReason(EVM_DESTINATION), referenceHash(1, 30101, 'ab'.repeat(20)));
+  assert.equal(burnDestinationReason(TRON_DESTINATION), referenceHash(728126428, 30420, TRON_PAYLOAD));
 });
 
-test('getInfo does not advertise V1 routes, but the wallet still enforces them', async () => {
+test('getInfo does not advertise routes, but the wallet enforces the exact chain and endpoint', async () => {
   const { provider, burn, burned } = destinationWallet();
   const info = await provider.getInfo();
   assert.deepEqual(
@@ -551,63 +545,126 @@ test('getInfo does not advertise V1 routes, but the wallet still enforces them',
   assert.equal(info.protocol, 'RGB_L1');
   assert.deepEqual(info.burnRecipientNamespaces, ['eip155', 'tron']);
   assert.ok(info.methods.includes('burnAsset'));
-  // Enforcement is unchanged: an unconfigured payout chain is refused.
+  // WalletConnect does not carry the optional wallet methods yet.
+  for (const method of ['createUtxos', 'getBtcBalance', 'refresh', 'getAssetMetadata'])
+    assert.ok(!info.methods.includes(method), method);
   await assert.rejects(
-    burn({ burnRecipient: { chainId: 'eip155:56', address: EVM_PAYOUT.address } }),
-    { code: 'INVALID_PARAMS', message: /Unsupported V1 payout route/ },
+    burn({ burnDestination: { ...EVM_DESTINATION, chainId: 'eip155:56' } }),
+    { code: 'INVALID_PARAMS', message: /Unsupported payout route/ },
   );
   assert.equal(burned.length, 0);
 });
 
-test('a supplied burnDestination reaches the SDK intact and is kept in result, journal and status', async () => {
-  const { provider, burn, records, burned, confirmed } = destinationWallet();
-  const burnDestination = { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_PAYOUT.address.toUpperCase().replace('0X', '0x') };
-  const expected = { ...burnDestination, recipient: EVM_PAYOUT.address };
-  // The site may send a hash or extra fields; the wallet ignores them and hashes its own.
-  const result = await burn({ burnDestination: { ...burnDestination, hash: '0x' + '00'.repeat(32) } });
-  assert.equal(burned.length, 1);
-  assert.equal(burned[0].burnRecipient, referenceV1Hash(expected).slice(2));
-  assert.deepEqual(result.burnDestination, expected);
-  assert.equal(confirmed.length, 1);
-  assert.equal(records.length, 1);
-  assert.equal(records[0].state, 'complete');
-  assert.deepEqual(records[0].metadata.burnDestination, expected);
-  assert.deepEqual(records[0].metadata.payout, EVM_PAYOUT);
-  // The stored record survives a JSON round trip (AsyncStorage) and re-validates.
-  const [reread] = await new BurnOperations({}, { readAll: async () => JSON.parse(JSON.stringify(records)), write: async () => {} }).records();
-  assert.deepEqual(reread.metadata.burnDestination, expected);
+test('the burnDestination is committed and kept unchanged in result, journal and status', async () => {
+  for (const burnDestination of [EVM_DESTINATION, TRON_DESTINATION]) {
+    const { provider, burn, records, burned, confirmed } = destinationWallet();
+    const result = await burn({ burnDestination });
+    assert.equal(burned.length, 1);
+    assert.equal(burned[0].burnRecipient, burnDestinationReason(burnDestination));
+    assert.deepEqual(result.burnDestination, burnDestination);
+    assert.deepEqual(confirmed[0].burnDestination, burnDestination);
+    assert.equal(records[0].state, 'complete');
+    assert.deepEqual(records[0].metadata.burnDestination, burnDestination);
+    assert.equal('payout' in records[0].metadata, false);
+    // The stored record survives a JSON round trip (AsyncStorage) and re-validates.
+    const [reread] = await new BurnOperations({}, { readAll: async () => JSON.parse(JSON.stringify(records)), write: async () => {} }).records();
+    assert.deepEqual(reread.metadata.burnDestination, burnDestination);
+    const status = await provider.getTransferStatus(result.txid, 'rgb:bfa').catch(() => null);
+    if (status) assert.deepEqual(status.transfer.burnDestination, burnDestination);
+  }
 });
 
-test('mismatched burnDestination parameters are refused before native burn', async () => {
-  const good = { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_PAYOUT.address };
+test('legacy, mixed or unrouted burn parameters are refused before the prompt', async () => {
   const cases = [
-    ['unsupported version', { burnDestination: { ...good, version: 2 } }, /Invalid V1 burn destination/],
-    ['another chain', { burnDestination: { ...good, destinationChainId: 137 } }, /does not match the payout/],
-    ['another recipient', { burnDestination: { ...good, recipient: '0x' + 'cd'.repeat(20) } }, /does not match the payout/],
-    ['route not in wallet config', { burnDestination: { ...good, dstEid: 30109 } }, /does not match wallet configuration/],
-    ['malformed recipient', { burnDestination: { ...good, recipient: 'abcd' } }, /Invalid V1 burn destination/],
-    ['wrong RGB network', { network: 'regtest', burnDestination: good }, /Invalid RGB network/],
-    ['unconfigured payout chain', {
-      burnRecipient: { chainId: 'eip155:56', address: EVM_PAYOUT.address },
-      burnDestination: { ...good, destinationChainId: 56 },
-    }, /Unsupported V1 payout route/],
+    ['old burnRecipient alone', { burnDestination: undefined, burnRecipient: { chainId: 'eip155:1', address: EVM_DESTINATION.address } }],
+    ['burnRecipient next to burnDestination', { burnRecipient: { chainId: 'eip155:1', address: EVM_DESTINATION.address } }],
+    ['old V1 object', { burnDestination: { version: 1, destinationChainId: 1, dstEid: 30101, recipient: EVM_DESTINATION.address } }],
+    ['extra destination field', { burnDestination: { ...EVM_DESTINATION, hash: '0x' + '00'.repeat(32) } }],
+    ['missing endpoint', { burnDestination: { version: 1, chainId: 'eip155:1', address: EVM_DESTINATION.address } }],
+    ['missing version', { burnDestination: { chainId: 'eip155:1', address: EVM_DESTINATION.address, dstEid: 30101 } }],
+    ['unsupported version', { burnDestination: { ...EVM_DESTINATION, version: 2 } }],
+    ['string version', { burnDestination: { ...EVM_DESTINATION, version: '1' } }],
+    ['endpoint not in wallet config', { burnDestination: { ...EVM_DESTINATION, dstEid: 30109 } }],
+    ['malformed address', { burnDestination: { ...EVM_DESTINATION, address: 'abcd' } }],
+    ['wrong RGB network', { network: 'regtest' }],
   ];
-  for (const [label, extra, message] of cases) {
+  for (const [label, extra] of cases) {
     const { burn, records, burned, confirmed } = destinationWallet();
-    await assert.rejects(burn(extra), { code: 'INVALID_PARAMS', message }, label);
+    await assert.rejects(burn(extra), { code: 'INVALID_PARAMS' }, label);
     assert.equal(burned.length, 0, label);
     assert.equal(confirmed.length, 0, `${label}: no approval prompt`);
     assert.equal(records.length, 0, `${label}: nothing journaled`);
   }
 });
 
-test('without burnDestination the wallet still builds it from burnRecipient and its routes', async () => {
-  for (const payout of [EVM_PAYOUT, TRON_PAYOUT]) {
-    const { burn, records, burned } = destinationWallet();
-    const expected = createBurnDestination(payout, UTEXO_ROUTES);
-    const result = await burn({ burnRecipient: payout });
-    assert.equal(burned[0].burnRecipient, referenceV1Hash(expected).slice(2), payout.chainId);
-    assert.deepEqual(result.burnDestination, expected);
-    assert.deepEqual(records[0].metadata.burnDestination, expected);
-  }
+// ── Served methods and invoice-scoped mint validation ───────────────────────
+
+test('witness invoices keep the same three-hour mint window as blind invoices', async () => {
+  const invoices = [];
+  const wallet = {
+    isDisposed: () => false,
+    witnessReceive: async (args) => {
+      invoices.push(args);
+      return { invoice: 'rgb:witness', recipientId: 'bcrt:utxow:r', expirationTimestamp: 1 };
+    },
+  };
+  const provider = createDemoRgbProvider(wallet, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => true,
+    run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: false,
+  });
+  await provider.witnessReceive({ amount: 5, durationSeconds: 60 });
+  await provider.witnessReceive();
+  assert.deepEqual(invoices.map((a) => a.durationSeconds), [10800, 10800]);
+});
+
+test('getInfo lists only the methods the demo backend serves', async () => {
+  const native = {
+    protocol: 'RGB_LN',
+    isDisposed: () => false,
+    getNetwork: () => 'regtest',
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    // The SDK lists signMessage for RLN, but the demo backend does not serve it.
+    signMessage: async () => 'sig',
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => true,
+    run: (_method, _args, action) => action(),
+    burn: emptyJournal(), burnEnabled: true,
+  });
+  const { methods } = await provider.getInfo();
+  assert.ok(methods.includes('witnessReceive'));
+  for (const method of methods) assert.equal(typeof provider[method], 'function', method);
+  assert.ok(!methods.includes('signMessage'));
+});
+
+test('getReceivedMint reaches the SDK through the operation queue, without approval', {
+  skip: typeof WebRgbProvider.prototype.getReceivedMint !== 'function'
+    && 'the installed @utexo/rgb-sdk has no getReceivedMint',
+}, async () => {
+  const invoice = 'rgb:rgb:bfa/~/bcrt:utxob:owned';
+  const runs = [];
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'regtest',
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    decodeRGBInvoice: async () => ({ network: 'regtest', recipientId: 'bcrt:utxob:owned', assetId: 'rgb:bfa', expirationTimestamp: null }),
+    listTransfers: async () => [{ idx: 1, kind: 'ReceiveBlind', status: 'WaitingCounterparty', recipientId: 'bcrt:utxob:owned', invoiceString: invoice, assignments: [] }],
+    getReceivedMint: async (_recipientId, options) => {
+      assert.deepEqual(options, { refreshIncoming: true });
+      return undefined;
+    },
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://mint.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async () => { throw new Error('getReceivedMint must not prompt'); },
+    run: (method, _args, action) => { runs.push(method); return action(); },
+    burn: emptyJournal(), burnEnabled: false,
+  });
+  assert.ok((await provider.getInfo()).methods.includes('getReceivedMint'));
+  assert.equal(await provider.getReceivedMint({ invoice }), null);
+  assert.deepEqual(runs, ['getInfo', 'getReceivedMint']);
 });

@@ -13,8 +13,7 @@
  */
 import {
   BurnOperations,
-  burnDestinationHash,
-  createBurnDestination,
+  burnDestinationReason,
   type BurnOperationRecord,
 } from '@utexo/rgb-sdk/webrgb';
 import { HEX_32 } from '@utexo/rgb-sdk-core/conformance';
@@ -30,9 +29,8 @@ import {
 
 const ISSUED = 5_000;
 const BURN_AMOUNT = 1_200;
-/** The demo's regtest bridge route (utils/wallet/profiles.ts). */
-const ROUTES = [{ chainId: 'eip155:31337', dstEid: 0 }] as const;
-const PAYOUT = { chainId: 'eip155:31337', address: '0x00000000000000000000000000000000000e2e01' };
+/** The demo's regtest bridge route (utils/wallet/profiles.ts), with a payout address. */
+const DESTINATION = { version: 1 as const, chainId: 'eip155:31337', address: '0x00000000000000000000000000000000000e2e01', dstEid: 0 };
 
 function memoryStore() {
   const records = new Map<string, BurnOperationRecord>();
@@ -78,8 +76,8 @@ export async function scenarioL3(ctx: RgbLibScenarioContext): Promise<void> {
       sender.burn({ assetId: ifa.assetId, amount: '0', feeRate: FEE_RATE, minConfirmations: 1 })
     ), (message) => ({ message }));
 
-  const destination = createBurnDestination(PAYOUT, ROUTES);
-  const burnRecipient = burnDestinationHash(destination).slice(2);
+  // The native burn_reason: the SPEC §4.1 commitment, 64 hex characters without 0x.
+  const burnRecipient = burnDestinationReason(DESTINATION);
   assert(/^[0-9a-f]{64}$/.test(burnRecipient), 'burn recipient must be a 32-byte hash');
 
   const { records, store } = memoryStore();
@@ -88,7 +86,7 @@ export async function scenarioL3(ctx: RgbLibScenarioContext): Promise<void> {
     'BurnOperations.execute',
     () => operations.execute(
       { assetId: ifa.assetId, amount: String(BURN_AMOUNT), burnRecipient, feeRate: FEE_RATE, minConfirmations: 1 },
-      { origin: 'e2e:L3', network: 'regtest', payout: PAYOUT, burnDestination: destination },
+      { origin: 'e2e:L3', network: 'regtest', burnDestination: DESTINATION },
       () => undefined
     ),
     (r) => ({ id: r.id, state: r.state, result: r.result })
@@ -124,7 +122,7 @@ export async function scenarioL3(ctx: RgbLibScenarioContext): Promise<void> {
   await step('a second burn is not blocked by the first', async () => {
     const next = await operations.execute(
       { assetId: ifa.assetId, amount: '1', burnRecipient, feeRate: FEE_RATE, minConfirmations: 1 },
-      { origin: 'e2e:L3', network: 'regtest', payout: PAYOUT, burnDestination: destination },
+      { origin: 'e2e:L3', network: 'regtest', burnDestination: DESTINATION },
       () => undefined
     );
     assertEq(next.state, 'complete', 'second journal state');

@@ -120,7 +120,7 @@ The website must request the same network. For the bridge frontend set
 stack; restart Vite after changing its environment and reconnect the website.
 
 WebRGB and its WalletConnect adapter use the published npm packages
-`@utexo/webrgb@^0.1.3` and `@utexo/webrgb-walletconnect@^0.1.3`.
+`@utexo/webrgb@0.1.7` and `@utexo/webrgb-walletconnect@0.1.7`.
 The SDK pins RLN `0.17.0-beta.3`. Install with `npm install --install-strategy=nested`;
 on macOS the SDK downloads the iOS bindings during installation, and Android
 resolves its bindings through Gradle. Follow the native build instructions in
@@ -185,14 +185,38 @@ configured Bitcoin network. Missing configuration appears on the tab with the
 specific environment variable names. Restart Metro after setting them. The website must support `RGB_L1` on the same network; the deep
 link is `myapp://rgb-lib?uri=…`. WebRGB advertises the SDK's on-chain methods.
 RGB Lib supports local burns and WebRGB `burnAsset` / `getConsignment` when
-native burn and proof export are available. Payout routes in `utils/wallet/profiles.ts`
-match the bridge's V1 destination contract: Arbitrum, Ethereum, Polygon, Plasma and
-Tron on utexo; local EVM 31337 on regtest. The SDK commits the destination hash
-in the proof and saves the destination in the burn journal for recovery. An existing
+native burn and proof export are available. A website sends one
+`burnDestination: { version: 1, chainId, address, dstEid }` with a native address;
+a missing or other `version` is refused before the prompt. The SDK
+accepts only an exact chain and endpoint pair from the payout routes in
+`utils/wallet/profiles.ts` (Arbitrum, Ethereum, Polygon, Plasma and Tron on utexo;
+local EVM 31337 on regtest), checks the address before the prompt, and commits the
+destination hash as the native `burn_reason`. The routes are not advertised in
+`getInfo()`, and a request with the old `burnRecipient` is refused: there is no
+address-only fallback. The local burn form takes the chain and address and uses that
+chain's configured endpoint. The burn journal keeps the destination for recovery and
+checks every record against the WebRGB commitment: a record in an earlier format is
+not read, and burns stop until it is removed. An existing
 local burn can be shared through the bridge's Existing burn → From wallet flow;
 proof sharing requires approval. Message signing remains unavailable for RGB Lib.
-RLN burn behavior is unchanged. After updating, fully reload the demo and reconnect
-the WalletConnect session so it negotiates burn/proof methods.
+RLN has no payout routes, so burn is off for RLN. The optional WebRGB methods
+`createUtxos`, `getBtcBalance`, `refresh` and `getAssetMetadata` are not served
+yet: WalletConnect does not carry them. After updating, fully reload the demo and
+reconnect the WalletConnect session so it negotiates burn/proof methods.
+
+WebRGB `getReceivedMint({ invoice })` is served when the installed SDK and engine
+have it. A bridge site polls it with an invoice from `witnessReceive` or
+`blindReceive` to check a prepared BFA mint before the EVM lock is paid. The wallet
+shows no prompt: the SDK accepts only an invoice this wallet created, refreshes
+incoming transfers, and returns the checked mint terms, `null` while pending, or
+an error for a failed receive or an expired invoice. The invoice may omit the
+asset, so a wallet can receive the first mint of an asset: RGB Lib reads `assetId`
+from the checked consignment, and the site must compare it with the selected asset
+before paying. The call runs through the
+same operation queue as the other WalletConnect methods. Both receive methods use
+the demo's minimum invoice window (`MIN_INVOICE_DURATION_SECONDS`). Sessions
+approved before this method existed keep working but get `rgb_getReceivedMint`
+only after reconnecting.
 
 Install the local dependency and rebuild (Expo Go cannot load native bindings):
 
