@@ -65,18 +65,14 @@ is checked again after approval, and decimal amounts are converted without round
 | `components/wallet-burn.tsx` | Local burn form and saved transaction details |
 
 WebRGB argument and result types come from `@utexo/webrgb`. The SDK provider is
-imported from `@utexo/rgb-sdk-rn/webrgb`; the app does not implement another
+imported from `@utexo/rgb-sdk/webrgb`; the app does not implement another
 WebRGB protocol mapping.
 
-The demo currently uses the local `../rgb-sdk-rn` checkout (the `feat/rgb-lib-bfa`
-branch, initially reviewed at `56e3624`, plus the local podspec packaging fix). The package keeps version
-`1.0.0-beta.39`, but the published beta.39 does not include this new backend.
-`package.json` uses `file:../rgb-sdk-rn`; npm links the adjacent checkout,
-including its already-installed native bindings. Metro watches that checkout;
-TypeScript, autolinking and Node tests resolve the same SDK. Run `npm install`
-in this demo. The prepared local checkout is required on other machines. After an SDK update,
-regenerate the native projects and rebuild the app with `npm run ios` or
-`npm run android`.
+`package.json` installs the published `@utexo/rgb-sdk@1.0.0-beta.12`
+(WebRGB 0.2) and `@utexo/rgb-sdk-rn@1.0.0-beta.43`
+(`allowRecklessSchemas`, native bridge version 8) from npm. `@utexo/rgb-sdk-rn-rln` still declares `@utexo/webrgb@^0.1.3`, so an
+`overrides` entry gives it the app's 0.2.0. After an SDK update, run `npm run
+ios:pod-install` and rebuild the app with `npm run ios` or `npm run android`.
 
 Transfer amounts come directly from the SDK. Its shared mapper preserves
 `requestedAssignment`, computes outgoing amounts per transfer and exposes exact
@@ -120,7 +116,7 @@ The website must request the same network. For the bridge frontend set
 stack; restart Vite after changing its environment and reconnect the website.
 
 WebRGB and its WalletConnect adapter use the published npm packages
-`@utexo/webrgb@0.1.7` and `@utexo/webrgb-walletconnect@0.1.7`.
+`@utexo/webrgb@0.2.0` and `@utexo/webrgb-walletconnect@0.2.0`.
 The SDK pins RLN `0.17.0-beta.3`. Install with `npm install --install-strategy=nested`;
 on macOS the SDK downloads the iOS bindings during installation, and Android
 resolves its bindings through Gradle. Follow the native build instructions in
@@ -163,6 +159,10 @@ EXPO_PUBLIC_RGB_LIB_UTEXO_EVM_RPC_URLS={"42161":"https://arb1.arbitrum.io/rpc"}
 EXPO_PUBLIC_RGB_LIB_REGTEST_INDEXER_URL=tcp://your-regtest-host:50001
 EXPO_PUBLIC_RGB_LIB_REGTEST_PROXY_ENDPOINT=rpc://your-compatible-proxy:3000/json-rpc
 # EXPO_PUBLIC_RGB_LIB_REGTEST_EVM_RPC_URLS={"31337":"http://your-regtest-evm:8545"}
+
+# Mainnet: rgb-lib opens IFA and BFA only with this flag; without it the wallet
+# has NIA, UDA and CFA, and burn and getReceivedMint are refused:
+# EXPO_PUBLIC_RGB_LIB_MAINNET_ALLOW_RECKLESS_SCHEMAS=true
 ```
 
 For this local setup, **Utexo signet** uses the indexer and dev proxy above,
@@ -200,9 +200,12 @@ not read, and burns stop until it is removed. An existing
 local burn can be shared through the bridge's Existing burn → From wallet flow;
 proof sharing requires approval. Message signing remains unavailable for RGB Lib.
 RLN has no payout routes, so burn is off for RLN. The optional WebRGB methods
-`createUtxos`, `getBtcBalance`, `refresh` and `getAssetMetadata` are not served
-yet: WalletConnect does not carry them. After updating, fully reload the demo and
-reconnect the WalletConnect session so it negotiates burn/proof methods.
+`createUtxos`, `getBtcBalance`, `refresh`, `getAssetMetadata`, `cancelReceive` and
+`signPsbt` run through the same queue; `createUtxos`, `cancelReceive` and `signPsbt`
+ask for confirmation (`utils/wallet/approval.ts`), and `getInfo()` lists only what
+the engine serves. `transferReceived` and `transferSettled` reach the website as
+WalletConnect events. After updating, fully reload the demo and reconnect the
+WalletConnect session so it negotiates the new methods and events.
 
 WebRGB `getReceivedMint({ invoice })` is served when the installed SDK and engine
 have it. A bridge site polls it with an invoice from `witnessReceive` or

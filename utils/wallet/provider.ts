@@ -66,8 +66,8 @@ export function createDemoRgbProvider(
       // burnDestination against them and does not advertise them.
       const info = await provider.getInfo();
       // List only what this backend serves: a listed method must not reject
-      // with METHOD_NOT_SUPPORTED. createUtxos, getBtcBalance, refresh and
-      // getAssetMetadata are not served yet: WalletConnect does not carry them.
+      // with METHOD_NOT_SUPPORTED. The SDK already omits what this engine lacks
+      // (cancelReceive without failTransfers, signPsbt without PSBT signing).
       const methods = info.methods.filter(
         (method) => method in backend && (options.burnEnabled || !BURN_METHODS.has(method)),
       );
@@ -87,6 +87,16 @@ export function createDemoRgbProvider(
     getConsignment: wrap('getConsignment', burnOnly(provider.getConsignment.bind(provider))),
     // No prompt: the SDK binds the result to an invoice this wallet created.
     ...(getReceivedMint && { getReceivedMint: wrap('getReceivedMint', getReceivedMint) }),
+    // WebRGB 0.2. Spending and cancelling prompt in the SDK; reads do not.
+    createUtxos: wrap('createUtxos', provider.createUtxos.bind(provider)),
+    cancelReceive: wrap('cancelReceive', provider.cancelReceive.bind(provider)),
+    signPsbt: wrap('signPsbt', provider.signPsbt.bind(provider)),
+    getBtcBalance: wrap('getBtcBalance', () => provider.getBtcBalance()),
+    refresh: wrap('refresh', provider.refresh.bind(provider)),
+    getAssetMetadata: wrap('getAssetMetadata', provider.getAssetMetadata.bind(provider)),
+    // Events are listener registration, not wallet work: no queue.
+    on: provider.on.bind(provider),
+    off: provider.off.bind(provider),
   };
   return backend;
 }

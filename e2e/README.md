@@ -25,15 +25,15 @@ yarn test:e2e --verbose       # echo raw ReactNativeJS logs too
 
 Exit code: `0` pass, `1` a scenario failed, `2` setup/timeout problem.
 
-## rgb-lib (RGB_L1) scenarios L1–L4
+## rgb-lib (RGB_L1) scenarios L1–L6
 
 These run two fresh rgb-lib wallets (`sender`, `receiver`) and no Lightning
 node. They only need bitcoind, electrs and the RGB proxy from the regtest
 stack, plus the bitcoin bridge on `:5000` for funding and mining.
 
 ```bash
-yarn test:e2e --only L1,L2,L3,L4                       # Android emulator
-npm run test:e2e -- --platform ios --only L1,L2,L3,L4  # iOS simulator
+yarn test:e2e --only L1,L2,L3,L4,L5,L6                       # Android emulator
+npm run test:e2e -- --platform ios --only L1,L2,L3,L4,L5,L6  # iOS simulator
 ```
 
 | Id | What it proves |
@@ -42,14 +42,30 @@ npm run test:e2e -- --platform ios --only L1,L2,L3,L4  # iOS simulator
 | L2 | NIA issue, `blindReceive` + `decodeRGBInvoice` + `onchainSend`, then a `witnessReceive` send; both settle with exact balances, kinds and `Settled` status. Before and after the witness send, `getReceivedMint` on the real engine answers "no mint" (`undefined` natively, `null` through WebRGB, with no prompt); WebRGB refuses a foreign invoice and serves an invoice without an asset |
 | L3 | the BFA send path: payout → burn destination (route `eip155:31337`) → 32-byte hash → `BurnOperations` journal → `burn` → `getConsignment` / `getConsignmentPath`; NIA burn and invalid params are refused |
 | L4 | `exportBackupToFile`, wipe the wallet directory, wrong password refused, `restoreBackupFromFile` into an empty directory, same assets and balances, and the restored wallet can still send |
+| L5 | prepare, approve, submit on `beginEnd` and `psbt`: a declined burn is failed, an approved burn reports the exact fee, a repeated end step returns the same result |
+| L6 | WebRGB 0.2 on the real engine: `getInfo` lists the 0.2 methods and `on`/`off`; `createUtxos` rounds a fractional fee rate up; `cancelReceive` (declined, cancelled, nothing left to cancel); `signPsbt` signs a bitcoin-only PSBT that `sendBtcEnd` broadcasts and refuses a PSBT that spends an RGB allocation with `UNSAFE_PSBT` before any prompt; `transferReceived` and `transferSettled` for an incoming send. Then a mainnet wallet opens offline without `allowRecklessSchemas` (IFA refused with `UNSUPPORTED_CAPABILITY`, no burn) and with it (burn available) |
 
-L2–L4 build on L1 (funding, UTXOs) and L2's asset; run them in order.
+L2–L4 build on L1 (funding, UTXOs) and L2's asset; run them in order. L5 and L6 use a wallet of their own but need L1's receiver (funded, with colorable UTXOs).
 
 L3 burns an IFA asset, not a BFA one. A BFA asset is minted by the bridge from
 an EVM deposit, which the local stack does not run. rgb-lib burns IFA and BFA
 through the same code (`SCHEMAS_SUPPORTING_BURN`), so everything after the
 asset type is the same path. A BFA mint (receive from EVM) is not covered:
 L2 calls `getReceivedMint` only for an NIA receive, which has no mint.
+
+rgb-lib (rgb-sdk-rn beta.42+) needs an RGB proxy with protocol 1.0
+(`rgb-proxy-server` 0.4.0). The rgb-lightning-node compose still runs 0.3.0
+(protocol 0.2), and every `blindReceive` then fails with
+`NoValidTransportEndpoint`. Replace it on :3000 before running L1–L6:
+
+```bash
+(cd "$RGBLN_REPO" && docker compose stop proxy)
+docker run -d --name rn-demo-e2e-proxy -p 3000:3000 ghcr.io/rgb-tools/rgb-proxy-server:0.4.0
+```
+
+L1–L6 need no Lightning node or LSP: bitcoind, electrs, the proxy and the
+bridge are enough. On macOS port 5000 is often AirPlay Receiver; run the bridge
+on another port (`BRIDGE_PORT=5050`) and set `BRIDGE_URL` in the fixtures.
 
 The indexer from `e2e-fixtures.json` (`127.0.0.1:50001`) is used as
 `tcp://127.0.0.1:50001`, because rgb-lib needs the scheme.

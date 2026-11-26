@@ -14,12 +14,13 @@ import {
 } from '@utexo/rgb-sdk-rn';
 import { UTEXOWallet } from '@utexo/rgb-sdk';
 
-import { assert, assertEq, hostUrl, waitFor } from '../harness';
+import { assert, assertEq, waitFor } from '../harness';
 import {
   FEE_RATE,
   expectRejects,
   freshDir,
   fundWallet,
+  bitcoinCliJson,
   createColorableUtxos,
   mine,
   settle,
@@ -128,14 +129,14 @@ export async function scenarioL5(ctx: RgbLibScenarioContext): Promise<void> {
     }, (r) => r);
 
     await step('the chain has the exact fee', async () => {
-      const url = `${hostUrl(ctx.fx.INDEXER_URL).replace(/\/$/, '')}/tx/${begun.txid}`;
-      const tx = await waitFor('burn in the indexer', async () => {
-        const response = await fetch(url);
-        return response.ok ? ((await response.json()) as { fee: number; weight: number }) : null;
-      });
-      assertEq(tx.fee, begun.fee, 'fee on chain');
-      assertEq(Math.ceil(tx.weight / 4), begun.vbytes, 'size on chain');
-      return { fee: tx.fee, weight: tx.weight, vbytes: begun.vbytes };
+      // Read from bitcoind, not the indexer: the stack's indexer is Electrum,
+      // which has no REST API. burnEnd broadcast it, nothing mined it yet.
+      const entry = await waitFor('burn in the mempool', () =>
+        bitcoinCliJson<{ fees: { base: number }; weight: number }>(`getmempoolentry ${begun.txid}`).catch(() => null));
+      const fee = Math.round(entry.fees.base * 1e8);
+      assertEq(fee, begun.fee, 'fee on chain');
+      assertEq(Math.ceil(entry.weight / 4), begun.vbytes, 'size on chain');
+      return { fee, weight: entry.weight, vbytes: begun.vbytes };
     }, (r) => r);
 
     await step('burn settles', () =>
@@ -172,8 +173,14 @@ export async function scenarioL5(ctx: RgbLibScenarioContext): Promise<void> {
 
     await step('receiver is ready', async () => {
       await fundWallet(receiver, 0.1);
-      return createColorableUtxos(receiver, 3);
-    });
+      try {
+        return { created: await createColorableUtxos(receiver, 3) };
+      } catch (error) {
+        // rgb-lib refuses new UTXOs while enough free ones exist: ready as is.
+        if (error instanceof Error && error.message.includes('AllocationsAlreadyAvailable')) return { created: 0 };
+        throw error;
+      }
+    }, (r) => r);
 
     await step('onchainSendBegin and End, repeated', async () => {
       const receive = await receiver.blindReceive({ amount: SENT });

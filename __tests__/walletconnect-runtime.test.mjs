@@ -5,6 +5,7 @@ import {
   normalizeBurnRecord,
   WebRgbError,
 } from '@utexo/rgb-sdk/webrgb';
+import { RGB_WALLETCONNECT_METHODS } from '@utexo/webrgb-walletconnect';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -60,7 +61,7 @@ function fixture(init, modules = {}, env = {}) {
     require: (name) => {
       if (name === '@utexo/rgb-sdk-rn-rln') return { BurnOperations, normalizeBurnRecord, ...modules[name] };
       if (Object.hasOwn(modules, name)) return modules[name];
-      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], burnDestinationReason, normalizeBurnDestination };
+      if (name === '@utexo/rgb-sdk/webrgb') return { BurnOperations, normalizeBurnRecord, WebRgbError, WEBRGB_READ_METHODS: ['enable', 'getInfo'], WEBRGB_WALLET_METHODS: [], burnDestinationReason, normalizeBurnDestination };
       // RGB_L1 runs on @utexo/rgb-sdk-rn + @utexo/rgb-sdk. Tests describe one mock
       // wallet under '@utexo/rgb-sdk-rn-rln'; build the L1 engine and facade from it.
       const sdk = modules['@utexo/rgb-sdk-rn-rln'] ?? {};
@@ -94,7 +95,7 @@ function fixture(init, modules = {}, env = {}) {
         stats.seenCores.push(options.core);
         return init ? init(stats.clients, client) : Promise.resolve(client);
       } } };
-      if (name === '@utexo/webrgb-walletconnect') return { createWalletConnectWallet: (options) => {
+      if (name === '@utexo/webrgb-walletconnect') return { RGB_WALLETCONNECT_METHODS, createWalletConnectWallet: (options) => {
         stats.transports.push(options);
         return { dispose: () => { stats.disposedTransports++; }, pair: async () => {} };
       } };

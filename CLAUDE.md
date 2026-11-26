@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 End-to-end integration demo for `@utexo/rgb-sdk-rn`. An Expo + Expo Router app that runs four live RGB Lightning flows (plus VSS flows) against a local regtest stack — two or three on-device RLN nodes execute real transactions inside the app process.
 
-The demo uses the published `@utexo/rgb-sdk-rn@1.0.0-beta.37`, which depends on `@utexo/rgb-sdk-core@1.0.0-beta.9`. Install with `npm install --install-strategy=nested`.
+RGB Lightning flows use the published `@utexo/rgb-sdk-rn@1.0.0-beta.40` (alias `@utexo/rgb-sdk-rn-rln`). The RGB Lib tab uses the published npm packages `@utexo/rgb-sdk@1.0.0-beta.12` and `@utexo/rgb-sdk-rn@1.0.0-beta.43` (native bridge version 8) (see `docs/wallet-integration.md`). Install with `npm install --install-strategy=nested`.
 
 Metro and Node tests use the installed package's published entry points. SDK installation downloads the matching iOS bindings; regenerate the native projects and rebuild the app after an SDK update.
 

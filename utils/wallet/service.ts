@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BurnOperations, WEBRGB_READ_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk/webrgb';
+import { BurnOperations, WEBRGB_READ_METHODS, WEBRGB_WALLET_METHODS, type WebRgbApproval } from '@utexo/rgb-sdk/webrgb';
 import { isRgbLibWallet, type AnyUtexoWallet } from './wallets';
-import type { WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
+import { RGB_WALLETCONNECT_METHODS, type WalletConnectWalletContext } from '@utexo/webrgb-walletconnect';
 import { isDemoWalletNetwork, type DemoWalletNetwork } from '../env';
 import { mockFaucetEnabled, mockFaucetRequest } from '../mock-faucet';
 import { createDemoRgbProvider } from './provider';
+import { approvalText } from './approval';
 import { canCancelInvoice, MIN_INVOICE_DURATION_MINUTES } from './invoice';
 import { WalletConnection } from './connection';
 import { rlnProfile, rgbLibProfile, type WalletProfile } from './profiles';
@@ -77,11 +78,14 @@ export class DemoWalletService {
       typeof (this.wallet as { getReceivedMint?: unknown } | undefined)?.getReceivedMint === 'function'
         ? ['getReceivedMint']
         : [];
+    // on/off are WalletConnect events, not RPC methods (see connection.ts).
+    const relayed = new Set<string>(RGB_WALLETCONNECT_METHODS);
     return [
       ...WEBRGB_READ_METHODS,
+      ...WEBRGB_WALLET_METHODS,
       ...(this.state.burnAvailable ? ['burnAsset', 'getConsignment'] : []),
       ...mint,
-    ];
+    ].filter((method) => relayed.has(method));
   }
 
   snapshot = () => this.state;
@@ -295,8 +299,10 @@ export class DemoWalletService {
     // Publish one consistent snapshot after sequential native reads.
     const btcBalance = await wallet.getBtcBalance();
     const groups = await wallet.listAssets();
+    // RLN and RGB Lib return different list types; read only the fields both share.
+    type ListedAsset = Pick<WalletAsset, 'assetId' | 'name' | 'precision' | 'balance'> & { ticker?: string };
     const assets: WalletAsset[] = Object.entries(groups).flatMap(([schema, group]) =>
-      (group ?? []).map((asset) => ({
+      ((group ?? []) as ListedAsset[]).map((asset) => ({
         assetId: asset.assetId,
         name: asset.name,
         ticker: 'ticker' in asset ? asset.ticker : undefined,
@@ -652,6 +658,9 @@ export class DemoWalletService {
       burn: { operations: this.operations!, destinationRoutes: this.profile.burnDestinationRoutes?.(this.state.network) },
       burnEnabled: this.state.burnAvailable,
       confirm: (request: WebRgbApproval) => {
+        const other = approvalText(request, this.state.network);
+        if (other)
+          return this.confirm(other.title, request.origin, other.details, Date.now() + 240_000, context.requestSignal);
         const isBurn = request.method === 'burnAsset';
         const isProof = request.method === 'getConsignment';
         // The SDK has already checked this destination against the profile's routes.
@@ -676,7 +685,7 @@ export class DemoWalletService {
           if (generation !== this.generation || this.changingNetwork || !this.state.ready)
             throw new Error('Wallet network changed. Reconnect the website.');
           const wireMethod = `rgb_${method}`;
-          const noteworthy = ['blindReceive', 'witnessReceive', 'burnAsset', 'getConsignment'].includes(method);
+          const noteworthy = ['blindReceive', 'witnessReceive', 'burnAsset', 'getConsignment', 'createUtxos', 'cancelReceive', 'signPsbt'].includes(method);
           this.set({ activeRequest: wireMethod });
           try {
             context.assertAuthorized();
@@ -694,7 +703,7 @@ export class DemoWalletService {
               this.set({ lastRequest: { method: wireMethod, status: 'completed' } });
               console.info(`[Wallet] ${method}: completed; returning result`);
             }
-            if (['blindReceive', 'witnessReceive', 'burnAsset', 'getTransferStatus', 'getReceivedMint'].includes(method)) {
+            if (['blindReceive', 'witnessReceive', 'burnAsset', 'getTransferStatus', 'getReceivedMint', 'createUtxos', 'cancelReceive', 'refresh'].includes(method)) {
               await this.readWalletData().catch((error) => {
                 this.set({
                   error: `Operation completed; balances could not refresh: ${messageOf(error)}`,

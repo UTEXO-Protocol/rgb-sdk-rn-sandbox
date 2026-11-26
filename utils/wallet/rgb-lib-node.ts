@@ -100,7 +100,15 @@ export function buildRgbLibConfig(network: DemoWalletNetwork) {
     const orphan = Object.keys(evmMintLockBlocks).find((chain) => !evmRpcUrls?.[chain]);
     if (orphan) throw new Error(`${prefix}_EVM_MINT_LOCK_BLOCKS sets chain ${orphan}, which has no entry in ${prefix}_EVM_RPC_URLS.`);
   }
-  return { network, unlockParams: { indexerUrl, proxyEndpoint, evmRpcUrls, evmMintLockBlocks } satisfies RgbLibRnUnlockParams };
+  // rgb-lib refuses a mainnet wallet with IFA or BFA unless this is set; without
+  // it a mainnet wallet holds NIA, UDA and CFA only (no burn, no received mint).
+  const allowRecklessSchemas = network === 'mainnet' &&
+    process.env.EXPO_PUBLIC_RGB_LIB_MAINNET_ALLOW_RECKLESS_SCHEMAS?.trim() === 'true';
+  return {
+    network,
+    allowRecklessSchemas,
+    unlockParams: { indexerUrl, proxyEndpoint, evmRpcUrls, evmMintLockBlocks } satisfies RgbLibRnUnlockParams,
+  };
 }
 
 function storageDirectory(network: DemoWalletNetwork) {
@@ -123,6 +131,7 @@ export function describeRgbLibConfiguration(network: DemoWalletNetwork) {
       const lock = unlockParams.evmMintLockBlocks?.[id] ?? DEFAULT_EVM_MINT_LOCK_BLOCKS;
       return `${id} (mint lock ${lock.min}–${lock.max} blocks${unlockParams.evmMintLockBlocks?.[id] ? '' : ', default'})`;
     }).join(', ') || 'Not configured'}`,
+    `Schemas: ${network !== 'mainnet' || buildRgbLibConfig(network).allowRecklessSchemas ? 'all (NIA, UDA, CFA, IFA, BFA)' : 'NIA, UDA, CFA (set EXPO_PUBLIC_RGB_LIB_MAINNET_ALLOW_RECKLESS_SCHEMAS=true for IFA and BFA)'}`,
     'Witness: taproot',
     `Storage: ${storageDirectory(network).replace(/^file:\/\//, '')}`,
   ].join('\n');
@@ -176,6 +185,7 @@ export async function openSavedRgbLibWallet(network: DemoWalletNetwork, stoppedW
         storageDirPath: directory.replace(/^file:\/\//, ''),
         witnessVersion: 'taproot',
         reuseAddresses: true,
+        allowRecklessSchemas: config.allowRecklessSchemas,
         // Endpoints given once. rgb-lib connects (goOnline) lazily with them on
         // the first online operation, once per session.
         ...config.unlockParams,

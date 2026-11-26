@@ -76,6 +76,19 @@ async function bridgeCommand(args: string): Promise<string> {
 }
 
 export const mine = (blocks: number) => bridgeCommand(`mine ${blocks}`);
+
+/** A bitcoin-cli command whose result is JSON (bridgeCommand flattens it to a string). */
+export async function bitcoinCliJson<T>(args: string): Promise<T> {
+  if (!bridgeEndpoint) throw new Error('bridge not configured — call useBridge(fx)');
+  const response = await fetch(bridgeEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ args }),
+  });
+  const data = (await response.json()) as { error?: string; result?: T };
+  if (!response.ok || data.error) throw new Error(`bridge ${args}: ${data.error ?? response.status}`);
+  return data.result as T;
+}
 export const sendToAddress = (address: string, btc: number) => bridgeCommand(`sendtoaddress ${address} ${btc}`);
 
 /** Fee rate for every regtest transaction, in sat/vB. */
