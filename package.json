@@ -34,12 +34,12 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "@reown/walletkit": "1.6.0",
-    "@utexo/rgb-sdk": "1.0.0-beta.11",
+    "@utexo/rgb-sdk": "1.0.0-beta.12",
     "@utexo/rgb-sdk-core": "1.0.0-beta.11",
-    "@utexo/rgb-sdk-rn": "1.0.0-beta.42",
+    "@utexo/rgb-sdk-rn": "1.0.0-beta.43",
     "@utexo/rgb-sdk-rn-rln": "npm:@utexo/rgb-sdk-rn@1.0.0-beta.40",
-    "@utexo/webrgb": "0.1.7",
-    "@utexo/webrgb-walletconnect": "0.1.7",
+    "@utexo/webrgb": "0.2.0",
+    "@utexo/webrgb-walletconnect": "0.2.0",
     "@walletconnect/core": "2.25.0",
     "@walletconnect/react-native-compat": "2.25.0",
     "buffer": "^6.0.3",
@@ -83,5 +83,10 @@
     "jest-expo": "~54.0.16",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "@utexo/rgb-sdk-rn-rln": {
+      "@utexo/webrgb": "$@utexo/webrgb"
+    }
+  }
 }

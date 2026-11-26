@@ -1,7 +1,6 @@
 // RLN's transfer mapper still comes from @utexo/rgb-sdk-rn-rln; WebRGB and the burn
 // journal come from @utexo/rgb-sdk/webrgb, as in the app.
 import { UTEXOWallet } from '@utexo/rgb-sdk-rn-rln';
-import { BurnOperations } from '@utexo/rgb-sdk/webrgb';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { keccak_256 } from '@noble/hashes/sha3.js';
@@ -10,9 +9,13 @@ import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { connectWalletConnect, createWalletConnectWallet } from '@utexo/webrgb-walletconnect';
-import { WebRgbError, WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationReason } from '@utexo/rgb-sdk/webrgb';
+import { connectWalletConnect, createWalletConnectWallet, RGB_WALLETCONNECT_METHODS } from '@utexo/webrgb-walletconnect';
+import { BurnOperations, WebRgbError, WebRgbProvider, WEBRGB_READ_METHODS, burnDestinationReason } from '@utexo/rgb-sdk/webrgb';
 import * as invoicePolicy from '../utils/wallet/invoice.ts';
+import { approvalText } from '../utils/wallet/approval.ts';
+
+// on/off are WalletConnect events, not RPC methods: the app filters them out the same way.
+const RELAYED_READ_METHODS = WEBRGB_READ_METHODS.filter((method) => RGB_WALLETCONNECT_METHODS.includes(method));
 
 const source = ts.transpileModule(
   readFileSync(new URL('../utils/wallet/provider.ts', import.meta.url), 'utf8'),
@@ -302,7 +305,7 @@ for (const protocol of ['RGB_LN', 'RGB_L1']) test(`packed adapter connects ${pro
     client: walletKit,
     network,
     account: 'test-wallet',
-    methods: [...WEBRGB_READ_METHODS, 'burnAsset', 'getConsignment'],
+    methods: [...RELAYED_READ_METHODS, 'burnAsset', 'getConsignment'],
     approveSession: async () => true,
     getProvider: (context) =>
       createDemoRgbProvider(native, {
@@ -439,7 +442,7 @@ test('RGB Lib that cannot burn does not advertise signing or bridge payout metho
   const transport = createWalletConnectWallet({
     client: { on: events.on.bind(events), off: events.off.bind(events), getActiveSessions: () => ({}), core: { expirer: new EventEmitter() } },
     network: 'regtest', account: 'RGB-L1-' + 'a'.repeat(64),
-    methods: WEBRGB_READ_METHODS,
+    methods: RELAYED_READ_METHODS,
     approveSession: async () => false,
     getProvider: () => provider,
   });
@@ -667,4 +670,68 @@ test('getReceivedMint reaches the SDK through the operation queue, without appro
   assert.ok((await provider.getInfo()).methods.includes('getReceivedMint'));
   assert.equal(await provider.getReceivedMint({ invoice }), null);
   assert.deepEqual(runs, ['getInfo', 'getReceivedMint']);
+});
+
+test('WebRGB 0.2 wallet methods run in the demo queue and cancelReceive fails the waiting receive', async () => {
+  const ran = [];
+  const prompts = [];
+  const failed = [];
+  let status = 'WaitingCounterparty';
+  const native = {
+    protocol: 'RGB_L1',
+    isDisposed: () => false,
+    getNetwork: () => 'regtest',
+    getBfaCapabilities: async () => ({ burn: false, consignment: false }),
+    listTransfers: async () => [{ recipientId: 'rid-1', kind: 'ReceiveBlind', status, batchTransferIdx: 4, amount: 10 }],
+    failTransfers: async (params) => { failed.push(params); status = 'Failed'; return true; },
+    getBtcBalance: async () => ({
+      vanilla: { settled: 1000, future: 1000, spendable: 1000 },
+      colored: { settled: 0, future: 0, spendable: 0 },
+    }),
+  };
+  const provider = createDemoRgbProvider(native, {
+    context: { origin: 'https://bridge.example', signal: new AbortController().signal, assertAuthorized() {} },
+    confirm: async (request) => { prompts.push(request); return true; },
+    run: (method, _args, action) => { ran.push(method); return action(); },
+    burn: emptyJournal(),
+    burnEnabled: false,
+  });
+  await provider.enable();
+  const { methods } = await provider.getInfo();
+  for (const method of ['cancelReceive', 'getBtcBalance', 'on', 'off'])
+    assert.ok(methods.includes(method), `getInfo lists ${method}`);
+  // No PSBT carrier on this engine: not listed, and the stub still answers.
+  assert.ok(!methods.includes('signPsbt'));
+  await assert.rejects(provider.signPsbt('cHNidP8='), { code: 'METHOD_NOT_SUPPORTED' });
+  assert.deepEqual(await provider.cancelReceive('rid-1'), { cancelled: true });
+  assert.deepEqual(failed, [{ batchTransferIdx: 4, noAssetOnly: false }]);
+  assert.equal(prompts.at(-1).method, 'cancelReceive');
+  assert.deepEqual(await provider.cancelReceive('rid-1'), { cancelled: false });
+  assert.equal(prompts.length, 1, 'nothing to cancel does not prompt');
+  assert.equal((await provider.getBtcBalance()).vanilla.settled, 1000);
+  assert.ok(ran.includes('cancelReceive') && ran.includes('signPsbt') && ran.includes('getBtcBalance'));
+  // Listener registration is not wallet work: it bypasses the queue.
+  const listener = () => {};
+  provider.on('transferSettled', listener);
+  provider.off('transferSettled', listener);
+  assert.ok(!ran.includes('on') && !ran.includes('off'));
+});
+
+test('the demo prompts describe createUtxos, cancelReceive and signPsbt', () => {
+  const create = approvalText({ origin: 'o', method: 'createUtxos', params: { num: 4, size: 2000, feeRate: 2 } }, 'regtest');
+  assert.equal(create.title, 'Create UTXOs?');
+  assert.match(create.details, /Count: 4\nSize: 2000 sat each\nBTC fee rate: 2 sat\/vB/);
+  const cancel = approvalText({ origin: 'o', method: 'cancelReceive', params: { recipientId: 'rid', kind: 'ReceiveBlind', amount: null } }, 'regtest');
+  assert.match(cancel.details, /Recipient ID: rid\nKind: ReceiveBlind\nAmount: Any amount/);
+  const sign = approvalText({ origin: 'o', method: 'signPsbt', params: {
+    outputs: [{ address: 'bcrt1qpay', amount: 1500 }, { address: null, amount: 0 }],
+    fee: 210, signedInputs: [0, 2], finalize: false,
+  } }, 'regtest');
+  assert.equal(sign.title, 'Sign transaction?');
+  assert.match(sign.details, /Output 0: 1500 sat to bcrt1qpay/);
+  assert.match(sign.details, /Output 1: 0 sat to a script without an address/);
+  assert.match(sign.details, /Fee: 210 sat\nInputs signed by this wallet: 0, 2\nFinalize: no/);
+  assert.match(approvalText({ origin: 'o', method: 'signPsbt', params: { outputs: [], fee: null, signedInputs: [0] } }, 'regtest').details, /Fee: unknown/);
+  // Burn, proof and invoice prompts keep their own text in the service.
+  assert.equal(approvalText({ origin: 'o', method: 'burnAsset', params: {} }, 'regtest'), null);
 });

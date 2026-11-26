@@ -84,6 +84,8 @@ export class WalletConnection {
       network: this.host.network(),
       account: this.host.account().slice(this.host.account().lastIndexOf(':') + 1),
       methods: [...this.host.methods()],
+      // The SDK provider polls local transfers and emits these (WebRGB 0.2).
+      events: ['transferReceived', 'transferSettled'],
       approveSession: (proposal) =>
         this.host.enqueue(() =>
           revision !== this.revision ? Promise.resolve(false) : this.host.confirm(
